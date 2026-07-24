@@ -552,8 +552,9 @@ function devCommand(type) {
 }
 
 function devSpawnBot(role) {
-    if (!ws || ws.readyState !== WebSocket.OPEN || !gameState) return;
-    const worldPos = screenToWorld(mouseX, mouseY);
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    // 游戏未开始时用默认坐标
+    const worldPos = gameState ? screenToWorld(mouseX, mouseY) : { x: 5500, y: 7000 };
     ws.send(JSON.stringify({ type: 'dev_spawn_bot', role, x: worldPos.x, y: worldPos.y }));
 }
 

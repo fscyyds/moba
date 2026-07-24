@@ -1564,6 +1564,10 @@ class Game {
             const bot = new Hero(this.nextId++, clamp(action.x, 100, MAP_WIDTH - 100), clamp(action.y, 100, MAP_HEIGHT - 100), team, action.role || 'warrior');
             bot.isBot = true;
             this.heroes.push(bot);
+            // 自动开局
+            if (this.state === 'waiting' && this.heroes.filter(h => !h.dead).length >= 2) {
+                this.start();
+            }
             return;
         }
 
