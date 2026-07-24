@@ -1,5 +1,5 @@
 ea4bc82a6ad023ab7ee23ee620429895
-::res://::1784541880
+::res://::1784895089
 ::res://assets/::1784541880
 ::res://scenes/::1784541880
 hero.tscn::PackedScene::-1::1784881725::0::1::::<><>::
@@ -26,7 +26,7 @@ hero.gd::GDScript::-1::1784891105::0::1::::Hero<>CharacterBody2D<>::
 joystick.gd::GDScript::-1::1784885065::0::1::::Joystick<>Control<>::
 lane_path.gd::GDScript::-1::1784885027::0::1::::LanePath<>Path2D<>::
 level_system.gd::GDScript::-1::1784890133::0::1::::LevelSystem<>Node<>::
-Main.gd::GDScript::-1::1784892169::0::1::::<>Node2D<>::
+Main.gd::GDScript::-1::1784895071::0::1::::<>Node2D<>::
 minion.gd::GDScript::-1::1784886454::0::1::::Minion<>CharacterBody2D<>::
 minion_stats.gd::GDScript::-1::1784890142::0::1::::MinionStats<>Node<>::
 minion_wave_manager.gd::GDScript::-1::1784885043::0::1::::MinionWaveManager<>Node<>::
