@@ -442,6 +442,9 @@ function connect() {
         } else if (data.type === 'joined') {
             myTeam = data.team;
             myHeroId = data.id;
+        } else if (data.type === 'player_count') {
+            document.getElementById('statusText').style.display = 'block';
+            document.getElementById('statusText').textContent = `已加入 (${data.count}/${data.max}) — 点Dev面板生成AI开局`;
         } else if (data.type === 'start') {
             menuEl.classList.add('hidden');
             hudEl.style.display = 'block';
@@ -502,7 +505,13 @@ for (const card of document.querySelectorAll('.hero-card')) {
 
 document.getElementById('joinBtn').addEventListener('click', () => {
     if (!selectedRole || !ws) return;
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'join', role: selectedRole }));
+    if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'join', role: selectedRole }));
+        document.getElementById('joinBtn').textContent = '等待对手...';
+        document.getElementById('joinBtn').disabled = true;
+        document.getElementById('statusText').textContent = '已加入，等待其他玩家或用Dev面板生成AI';
+        document.getElementById('statusText').style.display = 'block';
+    }
 });
 
 document.getElementById('restartBtn').addEventListener('click', () => window.location.reload());

@@ -1859,6 +1859,9 @@ wss.on('connection', (ws) => {
                 const role = validRoles.includes(data.role) ? data.role : 'warrior';
                 game.addPlayer(ws, role);
                 ws.send(JSON.stringify({ type: 'joined', team: ws.hero.team, role: ws.hero.role, id: ws.hero.id }));
+                // 广播当前玩家数
+                const count = game.heroes.filter(h => !h.dead).length;
+                game.broadcast({ type: 'player_count', count, max: PLAYERS_PER_TEAM * 2 });
             } else {
                 game.handleInput(ws, data);
             }
