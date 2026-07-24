@@ -1,0 +1,10 @@
+[gd_scene format=3]
+
+[node name="Tower" type="MeshInstance3D"]
+mesh = SubResource("cyl")
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0)
+
+[sub_resource type="CylinderMesh" id="cyl"]
+top_radius = 1.0
+bottom_radius = 1.2
+height = 4.0

@@ -1,0 +1,42 @@
+[gd_scene load_steps=5 format=3 uid="uid://c0main00000000000000000001"]
+
+[ext_resource type="Script" path="res://scripts/game_manager.gd" id="1_gm"]
+[ext_resource type="Script" path="res://scripts/player_controller.gd" id="2_pc"]
+[ext_resource type="PackedScene" path="res://scenes/hero.tscn" id="3_hero"]
+[ext_resource type="PackedScene" path="res://scenes/tower.tscn" id="4_tower"]
+[ext_resource type="PackedScene" path="res://scenes/minion.tscn" id="5_minion"]
+[ext_resource type="PackedScene" path="res://scenes/monster.tscn" id="6_monster"]
+[ext_resource type="PackedScene" path="res://scenes/projectile.tscn" id="7_proj"]
+
+[node name="Game" type="Node3D"]
+script = ExtResource("1_gm")
+hero_scene = ExtResource("3_hero")
+tower_scene = ExtResource("4_tower")
+minion_scene = ExtResource("5_minion")
+monster_scene = ExtResource("6_monster")
+projectile_scene = ExtResource("7_proj")
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.8, -0.6, 0, 0.6, 0.8, 0, 30, 20)
+projection = 1
+size = 30
+far = 500
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.8, -0.4, -0.4, 0.4, 0.9, -0.1, 0.4, -0.1, 0.9, 0, 20, 0)
+shadow_enabled = true
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("env")
+
+[node name="Entities" type="Node3D" parent="."]
+
+[node name="Projectiles" type="Node3D" parent="."]
+
+[node name="PlayerController" type="Node" parent="."]
+script = ExtResource("2_pc")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 1
+background_color = Color(0.1, 0.15, 0.1, 1)
+ambient_light_color = Color(0.3, 0.35, 0.3, 1)
