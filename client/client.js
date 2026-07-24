@@ -1201,6 +1201,38 @@ function render() {
         }
     }
 
+    // 防御塔攻击范围可视化
+    const me = getMyHero();
+    if (me && !me.dead) {
+        for (const t of gameState.towers || []) {
+            if (t.dead) continue;
+            const d = Math.hypot(me.x - t.x, me.y - t.y);
+            const range = t.attackRange || 500;
+            const warnRange = range * 1.5;
+            if (d > warnRange * 2) continue;
+            const pos = worldToScreen(t.x, t.y);
+            const r = range * scale;
+            const isEnemy = t.team !== myTeam;
+            const inRange = d <= range;
+            if (isEnemy) {
+                // 敌方塔：红色圈
+                const alpha = inRange ? 0.3 : 0.1;
+                ctx.fillStyle = `rgba(255, 50, 50, ${alpha})`;
+                ctx.beginPath(); ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2); ctx.fill();
+                const pulse = inRange ? (Math.sin(Date.now() * 0.006) + 1) * 0.3 + 0.4 : 0.5;
+                ctx.strokeStyle = `rgba(255, 80, 80, ${pulse})`;
+                ctx.lineWidth = inRange ? 3 : 2;
+                ctx.setLineDash([8, 4]);
+                ctx.beginPath(); ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2); ctx.stroke();
+                ctx.setLineDash([]);
+            } else {
+                // 我方塔：淡蓝色圈
+                ctx.fillStyle = `rgba(80, 180, 255, 0.06)`;
+                ctx.beginPath(); ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+    }
+
     // 弹道
     for (const p of gameState.projectiles || []) {
         if (p.dead) continue;

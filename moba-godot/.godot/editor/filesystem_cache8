@@ -1,9 +1,9 @@
 ea4bc82a6ad023ab7ee23ee620429895
-::res://::1784891166
+::res://::1784541880
 ::res://assets/::1784541880
 ::res://scenes/::1784541880
 hero.tscn::PackedScene::-1::1784881725::0::1::::<><>::
-main.tscn::PackedScene::8477522389357322586::1784891066::0::1::::<><>::res://scripts/moba/Main.gd<>res://scripts/moba/hero.gd<>res://scripts/moba/tower.gd<>res://scripts/moba/tower_stats.gd<>res://scripts/moba/tower_manager.gd<>res://scripts/moba/minion_wave_manager.gd
+main.tscn::PackedScene::8029049460368468346::1784892071::0::1::::<><>::res://scripts/moba/Main.gd
 minion.tscn::PackedScene::-1::1784881733::0::1::::<><>::
 monster.tscn::PackedScene::-1::1784881737::0::1::::<><>::
 projectile.tscn::PackedScene::-1::1784881741::0::1::::<><>::
@@ -12,7 +12,7 @@ tower.tscn::PackedScene::-1::1784881729::0::1::::<><>::
 game_manager.gd::GDScript::-1::1784881799::0::1::::<>Node3D<>::
 network_client.gd::GDScript::-1::1784540066::0::1::::<>Node<>::
 player_controller.gd::GDScript::-1::1784881756::0::1::::<>Node<>::
-::res://scripts/moba/::1784890618
+::res://scripts/moba/::1784891452
 alert_icon.gd::GDScript::-1::1784890613::0::1::::AlertIcon<>Label<>::
 attack_button.gd::GDScript::-1::1784885070::0::1::::AttackButton<>Control<>::
 attack_target_detector.gd::GDScript::-1::1784883666::0::1::::AttackTargetDetector<>Area2D<>::
@@ -26,13 +26,14 @@ hero.gd::GDScript::-1::1784891105::0::1::::Hero<>CharacterBody2D<>::
 joystick.gd::GDScript::-1::1784885065::0::1::::Joystick<>Control<>::
 lane_path.gd::GDScript::-1::1784885027::0::1::::LanePath<>Path2D<>::
 level_system.gd::GDScript::-1::1784890133::0::1::::LevelSystem<>Node<>::
-Main.gd::GDScript::-1::1784886495::0::1::::Main<>Node2D<>::
+Main.gd::GDScript::-1::1784892169::0::1::::<>Node2D<>::
 minion.gd::GDScript::-1::1784886454::0::1::::Minion<>CharacterBody2D<>::
 minion_stats.gd::GDScript::-1::1784890142::0::1::::MinionStats<>Node<>::
 minion_wave_manager.gd::GDScript::-1::1784885043::0::1::::MinionWaveManager<>Node<>::
 projectile.gd::GDScript::-1::1784884994::0::1::::Projectile<>Area2D<>::
 range_indicator.gd::GDScript::-1::1784890607::0::1::::RangeIndicator<>Node2D<>::
-tower.gd::GDScript::-1::1784890684::0::1::::Tower<>StaticBody2D<>::
+range_ring.gd::GDScript::-1::1784891452::0::1::::RangeRing<>Node2D<>::
+tower.gd::GDScript::-1::1784891272::0::1::::Tower<>StaticBody2D<>::
 tower_manager.gd::GDScript::-1::1784885718::0::1::::TowerManager<>Node<>::
 tower_projectile.gd::GDScript::-1::1784885726::0::1::::TowerProjectile<>Area2D<>::
 tower_stats.gd::GDScript::-1::1784885679::0::1::::TowerStats<>Node<>::

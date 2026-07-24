@@ -11,7 +11,6 @@ config_version=5
 [application]
 
 config/name="MOBA 3v3"
-config/description="3v3 MOBA game"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.2")
 
