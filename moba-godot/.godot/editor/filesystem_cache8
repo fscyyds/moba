@@ -1,9 +1,9 @@
 ea4bc82a6ad023ab7ee23ee620429895
-::res://::1784891036
+::res://::1784891166
 ::res://assets/::1784541880
 ::res://scenes/::1784541880
 hero.tscn::PackedScene::-1::1784881725::0::1::::<><>::
-main.tscn::PackedScene::8477522389357322586::1784890867::0::1::::<><>::res://scripts/moba/Main.gd<>res://scripts/moba/hero.gd<>res://scripts/moba/tower.gd<>res://scripts/moba/tower_stats.gd<>res://scripts/moba/tower_manager.gd<>res://scripts/moba/minion_wave_manager.gd
+main.tscn::PackedScene::8477522389357322586::1784891066::0::1::::<><>::res://scripts/moba/Main.gd<>res://scripts/moba/hero.gd<>res://scripts/moba/tower.gd<>res://scripts/moba/tower_stats.gd<>res://scripts/moba/tower_manager.gd<>res://scripts/moba/minion_wave_manager.gd
 minion.tscn::PackedScene::-1::1784881733::0::1::::<><>::
 monster.tscn::PackedScene::-1::1784881737::0::1::::<><>::
 projectile.tscn::PackedScene::-1::1784881741::0::1::::<><>::
@@ -22,7 +22,7 @@ character_stats.gd::GDScript::-1::1784890124::0::1::::CharacterStats<>Node<>::
 danger_vignette.gd::GDScript::-1::1784890624::0::1::::DangerVignette<>CanvasLayer<>::
 exp_bar.gd::GDScript::-1::1784885057::0::1::::ExpBar<>Control<>::
 health_bar.gd::GDScript::-1::1784885050::0::1::::HealthBarUI<>Control<>::
-hero.gd::GDScript::-1::1784885077::0::1::::Hero<>CharacterBody2D<>::
+hero.gd::GDScript::-1::1784891105::0::1::::Hero<>CharacterBody2D<>::
 joystick.gd::GDScript::-1::1784885065::0::1::::Joystick<>Control<>::
 lane_path.gd::GDScript::-1::1784885027::0::1::::LanePath<>Path2D<>::
 level_system.gd::GDScript::-1::1784890133::0::1::::LevelSystem<>Node<>::

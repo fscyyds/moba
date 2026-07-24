@@ -78,7 +78,7 @@ func _on_body_exited(body: Node2D) -> void:
 	targets_in_range.erase(body)
 	if body == current_target:
 		current_target = null
-		stats.current_stack_target = null
+			if stats: stats.current_stack_target = null
 
 ## 目标优先级（0~4）
 func _select_target() -> Node2D:
