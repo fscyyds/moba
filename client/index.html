@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MOBA 3v3 - PC 端原型</title>
+    <style>
+        * { box-sizing: border-box; user-select: none; margin: 0; padding: 0; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #111; color: #fff; font-family: 'Microsoft YaHei', sans-serif; }
+        #gameContainer { position: relative; width: 100%; height: 100%; }
+        canvas { display: block; background: #1a2a1a; cursor: crosshair; }
+
+        #menu, #gameover { position: absolute; inset: 0; background: rgba(5,10,15,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; }
+        #menu h1 { font-size: 52px; margin-bottom: 20px; background: linear-gradient(90deg, #4af, #f55); -webkit-background-clip: text; color: transparent; }
+        #menu p, #gameover p { font-size: 16px; color: #bbb; margin: 6px 0; max-width: 700px; text-align: center; line-height: 1.6; }
+        .hero-select { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; margin: 30px 0; max-width: 800px; }
+        .hero-card { width: 120px; padding: 16px 8px; background: rgba(255,255,255,0.08); border: 2px solid #555; border-radius: 12px; cursor: pointer; transition: all 0.2s; text-align: center; }
+        .hero-card:hover, .hero-card.selected { border-color: #0f0; background: rgba(0,255,0,0.1); transform: scale(1.05); }
+        .hero-card h3 { color: #ffd700; margin-bottom: 8px; font-size: 16px; }
+        .hero-card .role { font-size: 12px; color: #aaa; }
+        .btn { margin-top: 20px; padding: 14px 50px; font-size: 20px; color: #fff; background: linear-gradient(90deg, #4af, #48f); border: none; border-radius: 10px; cursor: pointer; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
+
+        #hud { position: absolute; inset: 0; pointer-events: none; display: none; }
+        #topBar { position: absolute; top: 0; left: 0; right: 0; height: 40px; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; gap: 40px; font-size: 16px; font-weight: bold; }
+        #status { color: #ffd700; }
+
+        #heroPanel { position: absolute; top: 50px; left: 16px; width: 200px; background: rgba(0,0,0,0.7); border-radius: 10px; padding: 12px; font-size: 13px; }
+        .bar { height: 10px; border-radius: 5px; background: #333; margin: 5px 0; overflow: hidden; }
+        .bar div { height: 100%; transition: width 0.1s; }
+        .hp-fill { background: linear-gradient(90deg, #f44, #f88); }
+        .mp-fill { background: linear-gradient(90deg, #44f, #88f); }
+        .xp-fill { background: linear-gradient(90deg, #4f4, #8f8); }
+        .stat-row { display: flex; justify-content: space-between; color: #ccc; margin-top: 4px; }
+
+        #skillBar { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 10px; pointer-events: auto; }
+        .skill { width: 80px; height: 74px; background: rgba(0,0,0,0.8); border: 2px solid #666; border-radius: 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 12px; color: #aaa; position: relative; cursor: pointer; }
+        .skill.ready { border-color: #0f0; color: #fff; box-shadow: 0 0 12px rgba(0,255,0,0.3); }
+        .skill .key { font-size: 20px; font-weight: bold; }
+        .skill .skill-name { font-size: 11px; margin-top: 2px; color: #ddd; }
+        .skill .skill-desc { font-size: 9px; color: #888; margin-top: 1px; text-align: center; line-height: 1.2; max-width: 74px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .skill .cd { position: absolute; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff; border-radius: 8px; }
+
+        #controlsHelp { position: absolute; bottom: 20px; right: 20px; color: #888; font-size: 12px; text-align: right; line-height: 1.8; }
+        #connection { position: absolute; top: 45px; left: 50%; transform: translateX(-50%); color: #f55; font-size: 14px; }
+        #devPanel { position: absolute; top: 50px; right: 16px; width: 130px; background: rgba(0,0,0,0.75); border-radius: 8px; padding: 10px; pointer-events: auto; }
+        #minimap { position: absolute; top: 50px; right: 160px; width: 200px; height: 133px; background: rgba(0,0,0,0.6); border: 2px solid #555; border-radius: 8px; pointer-events: none; }
+        #devPanel button { width: 100%; margin: 3px 0; padding: 5px; font-size: 11px; background: #333; color: #fff; border: 1px solid #555; border-radius: 4px; cursor: pointer; }
+        #devPanel button:hover { background: #555; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas"></canvas>
+
+        <div id="menu">
+            <h1>MOBA 3v3 - PC 端</h1>
+            <p>双路兵线 · 大小龙 · 6 英雄 · 服务端权威同步</p>
+            <p>选择英雄后进入对局，可开 6 个浏览器标签做 3v3 测试</p>
+            <div class="hero-select">
+                <div class="hero-card" data-role="warrior"><h3>狂战士</h3><div class="role">近战 · 高移速 · 高血量</div></div>
+                <div class="hero-card" data-role="mage"><h3>奥术师</h3><div class="role">中距离 · 技能爆发 · 脆</div></div>
+                <div class="hero-card" data-role="archer"><h3>神射手</h3><div class="role">最远射程 · 高攻速 · 脆皮</div></div>
+            </div>
+            <button class="btn" id="joinBtn" disabled>进入对局</button>
+        </div>
+
+        <div id="gameover" class="hidden">
+            <h1 id="resultText">对局结束</h1>
+            <p id="resultDetail"></p>
+            <div id="statsPanel" style="max-width:900px; width:90%; max-height:60vh; overflow:auto; background:rgba(0,0,0,0.6); border-radius:12px; padding:16px; margin:16px 0; text-align:left;">
+                <h3 style="color:#ffd700; margin-bottom:12px;">战后统计</h3>
+                <table id="statsTable" style="width:100%; border-collapse:collapse; font-size:13px; color:#ddd;">
+                    <thead><tr style="color:#aaa;"><th>英雄</th><th>队伍</th><th>KDA</th><th>等级</th><th>金币</th><th>输出</th><th>承伤</th><th>治疗</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+                <h3 style="color:#ffd700; margin:16px 0 8px;">经济曲线</h3>
+                <canvas id="goldChart" width="600" height="150" style="background:rgba(0,0,0,0.4); border-radius:6px;"></canvas>
+            </div>
+            <button class="btn" id="restartBtn">刷新重开</button>
+        </div>
+
+        <div id="hud">
+            <div id="topBar">
+                <span id="status">等待对手...</span>
+                <span id="gameTime">0:00</span>
+                <button id="muteBtn" style="pointer-events:auto; background:rgba(0,0,0,0.5); border:1px solid #666; color:#fff; border-radius:4px; padding:2px 10px; cursor:pointer; font-size:12px;">🔊 音效</button>
+            </div>
+            <div id="heroPanel">
+                <div class="stat-row"><span id="heroName">英雄</span><span>等级 <span id="heroLevel">1</span></span></div>
+                <div class="bar"><div class="hp-fill" id="hpBar" style="width:100%"></div></div>
+                <div class="bar"><div class="mp-fill" id="mpBar" style="width:100%"></div></div>
+                <div class="bar"><div class="xp-fill" id="xpBar" style="width:0%"></div></div>
+                <div class="stat-row"><span>击杀 <span id="kills">0</span></span><span>死亡 <span id="deaths">0</span></span></div>
+                <div class="stat-row"><span>金币 <span id="gold">0</span></span><span id="buffs"></span></div>
+                <div id="recallBar" class="hidden" style="margin-top:6px; color:#0f0; font-size:12px;">回城中 <span id="recallTime">0.0</span>s</div>
+                <div id="deathTimer" class="hidden" style="margin-top:6px; color:#f55; font-size:12px;">复活倒计时 <span id="respawnTime">0.0</span>s</div>
+            </div>
+            <div id="skillBar">
+                <div class="skill" id="skillQ"><span class="key">Q</span><span class="skill-name">技能</span><span class="skill-desc"></span></div>
+                <div class="skill" id="skillW"><span class="key">W</span><span class="skill-name">技能</span><span class="skill-desc"></span></div>
+                <div class="skill" id="skillE"><span class="key">E</span><span class="skill-name">技能</span><span class="skill-desc"></span></div>
+                <div class="skill" id="skillR"><span class="key">R</span><span class="skill-name">大招</span><span class="skill-desc"></span></div>
+                <div class="skill" id="skillTp" style="border-color:#4af;"><span class="key">T</span><span class="skill-name">传送</span><span class="skill-desc">3级解锁</span></div>
+            </div>
+            <div id="controlsHelp">
+                WASD / 鼠标右键：移动<br>
+                鼠标左键 / J / 空格：普攻<br>
+                Q / W / E / R：释放技能<br>
+                D：回城（引导7秒）| T：全球传送（3级）
+            </div>
+
+            <canvas id="minimap" width="200" height="133"></canvas>
+
+            <div id="devPanel">
+                <div style="font-weight:bold; color:#ffd700; margin-bottom:6px;">Dev 面板</div>
+                <div id="devGlobal" style="font-size:11px; color:#ccc; margin-bottom:8px; line-height:1.6;">
+                    时间 0:00<br>
+                    击杀 0 : 0<br>
+                    小龙刷新 --<br>
+                    大龙刷新 --
+                </div>
+                <button onclick="devSpawnBot('warrior')">生成敌方战士</button>
+                <button onclick="devSpawnBot('mage')">生成敌方法师</button>
+                <button onclick="devSpawnBot('archer')">生成敌方射手</button>
+                <button onclick="devCommand('dev_respawn')">立即复活</button>
+                <button onclick="devCommand('dev_levelup')">升 1 级</button>
+                <button onclick="devCommand('dev_gold')">+1000 金币</button>
+                <button onclick="devCommand('dev_refresh_monsters')">刷新大小龙</button>
+                <button onclick="devCommand('dev_end_game')">立即结束</button>
+            </div>
+        </div>
+        <div id="connection" class="hidden">连接中...</div>
+    </div>
+
+    <script src="client.js"></script>
+</body>
+</html>
