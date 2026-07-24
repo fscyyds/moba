@@ -1,23 +1,120 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=12 format=3 uid="uid://ds1ts41pis3o5"]
 
-[ext_resource type="Script" path="res://scripts/game_manager.gd" id="1_gm"]
-[ext_resource type="Script" path="res://scripts/player_controller.gd" id="2_pc"]
+[ext_resource type="Script" path="res://scripts/moba/Main.gd" id="1"]
+[ext_resource type="Script" path="res://scripts/moba/hero.gd" id="2"]
+[ext_resource type="Script" path="res://scripts/moba/character_stats.gd" id="3"]
+[ext_resource type="Script" path="res://scripts/moba/level_system.gd" id="4"]
+[ext_resource type="Script" path="res://scripts/moba/basic_attack.gd" id="5"]
+[ext_resource type="Script" path="res://scripts/moba/health_bar.gd" id="6"]
+[ext_resource type="Script" path="res://scripts/moba/exp_bar.gd" id="7"]
+[ext_resource type="Script" path="res://scripts/moba/tower.gd" id="8"]
+[ext_resource type="Script" path="res://scripts/moba/tower_stats.gd" id="9"]
+[ext_resource type="Script" path="res://scripts/moba/tower_manager.gd" id="10"]
+[ext_resource type="Script" path="res://scripts/moba/minion_wave_manager.gd" id="11"]
 
-[node name="Game" type="Node3D"]
-script = ExtResource("1_gm")
+[node name="Main" type="Node2D"]
+script = ExtResource("1")
 
-[node name="Camera3D" type="Camera3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.8, -0.6, 0, 0.6, 0.8, 0, 30, 20)
-projection = 1
-size = 30
-far = 500
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(5000, 5000)
+zoom = Vector2(0.5, 0.5)
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(0.8, -0.4, -0.4, 0.4, 0.9, -0.1, 0.4, -0.1, 0.9, 0, 20, 0)
+[node name="TowerManager" type="Node" parent="."]
+script = ExtResource("10")
 
-[node name="Entities" type="Node3D" parent="."]
+[node name="MinionWaveManager" type="Node" parent="."]
+script = ExtResource("11")
 
-[node name="Projectiles" type="Node3D" parent="."]
+[node name="Towers" type="Node2D" parent="."]
 
-[node name="PlayerController" type="Node" parent="."]
-script = ExtResource("2_pc")
+[node name="BlueMidT1" type="StaticBody2D" parent="Towers" groups=["towers", "team_blue"]]
+position = Vector2(3000, 7000)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/BlueMidT1"]
+script = ExtResource("9")
+tower_tier = 0
+team = "team_blue"
+lane = "mid"
+
+[node name="BlueMidT2" type="StaticBody2D" parent="Towers" groups=["towers", "team_blue"]]
+position = Vector2(2200, 7800)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/BlueMidT2"]
+script = ExtResource("9")
+tower_tier = 1
+team = "team_blue"
+lane = "mid"
+
+[node name="BlueMidT3" type="StaticBody2D" parent="Towers" groups=["towers", "team_blue"]]
+position = Vector2(1400, 8600)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/BlueMidT3"]
+script = ExtResource("9")
+tower_tier = 2
+team = "team_blue"
+lane = "mid"
+
+[node name="BlueCrystal" type="StaticBody2D" parent="Towers" groups=["towers", "team_blue"]]
+position = Vector2(800, 9200)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/BlueCrystal"]
+script = ExtResource("9")
+tower_tier = 3
+team = "team_blue"
+lane = "mid"
+
+[node name="RedMidT1" type="StaticBody2D" parent="Towers" groups=["towers", "team_red"]]
+position = Vector2(7000, 3000)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/RedMidT1"]
+script = ExtResource("9")
+tower_tier = 0
+team = "team_red"
+lane = "mid"
+
+[node name="RedMidT2" type="StaticBody2D" parent="Towers" groups=["towers", "team_red"]]
+position = Vector2(7800, 2200)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/RedMidT2"]
+script = ExtResource("9")
+tower_tier = 1
+team = "team_red"
+lane = "mid"
+
+[node name="RedMidT3" type="StaticBody2D" parent="Towers" groups=["towers", "team_red"]]
+position = Vector2(8600, 1400)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/RedMidT3"]
+script = ExtResource("9")
+tower_tier = 2
+team = "team_red"
+lane = "mid"
+
+[node name="RedCrystal" type="StaticBody2D" parent="Towers" groups=["towers", "team_red"]]
+position = Vector2(9200, 800)
+script = ExtResource("8")
+
+[node name="TowerStats" type="Node" parent="Towers/RedCrystal"]
+script = ExtResource("9")
+tower_tier = 3
+team = "team_red"
+lane = "mid"
+
+[node name="Entities" type="Node2D" parent="."]
+
+[node name="HeroBlue" type="CharacterBody2D" parent="Entities" groups=["heroes", "team_blue"]]
+position = Vector2(2000, 5000)
+script = ExtResource("2")
+
+[node name="HeroRed" type="CharacterBody2D" parent="Entities" groups=["heroes", "team_red"]]
+position = Vector2(8000, 5000)
+script = ExtResource("2")
+
+[node name="UI" type="CanvasLayer" parent="."]

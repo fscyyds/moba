@@ -34,7 +34,7 @@ func take_damage(raw_damage: int) -> int:
 	if is_dead:
 		return 0
 	var reduction := float(defense) / (defense + 602.0)
-	var actual := max(int(ceil(float(raw_damage) * (1.0 - reduction))), 1)
+	var actual: int = max(int(ceil(float(raw_damage) * (1.0 - reduction))), 1)
 	current_hp = max(current_hp - actual, 0)
 	hp_changed.emit(current_hp, max_hp)
 	if current_hp <= 0:

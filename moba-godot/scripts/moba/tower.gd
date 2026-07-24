@@ -6,13 +6,13 @@ class_name Tower
 enum State { IDLE, TARGETING, WINDUP, FIRE }
 var state: State = State.IDLE
 
-@onready var stats: TowerStats = $TowerStats
-@onready var range_area: Area2D = $AttackRangeArea
-@onready var warning_line: Line2D = $WarningLine
-@onready var shield: Sprite2D = $ShieldSprite
-@onready var label: Label = $TowerLabel
-@onready var hp_bar: ProgressBar = $HealthBar/ProgressBar
-@onready var sprite: Sprite2D = $Sprite2D
+@onready var stats: TowerStats = _get_or_create_node("TowerStats", TowerStats)
+@onready var range_area: Area2D = _get_or_create_node("AttackRangeArea", Area2D)
+@onready var warning_line: Line2D = _get_or_create_node("WarningLine", Line2D)
+@onready var shield: Sprite2D = _get_or_create_node("ShieldSprite", Sprite2D)
+@onready var label: Label = _get_or_create_label()
+@onready var hp_bar: ProgressBar = _get_or_create_hpbar()
+@onready var sprite: Sprite2D = _get_or_create_node("Sprite2D", Sprite2D)
 
 var current_target: Node2D = null
 var attack_timer: float = 0.0
@@ -35,9 +35,12 @@ func _ready() -> void:
 	_update_label()
 	if shield:
 		shield.visible = stats.is_invincible
-	# 初始化范围指示器
-	if range_indicator and stats:
-		range_indicator.setup(stats.team, stats.attack_range)
+	# 自动创建并初始化范围指示器
+	var ri := _get_or_create_indicator()
+	ri.setup(stats.attack_range, stats.team)
+	# 自动创建告警图标
+	var ai := _get_or_create_alert()
+	ai.position = Vector2(-15, -80)
 
 func _process(delta: float) -> void:
 	if not stats or stats.is_dead: return
@@ -169,9 +172,11 @@ func _on_hp(current: int, maximum: int) -> void:
 		hp_bar.value = current
 
 func _on_died() -> void:
-	# 隐藏范围指示器
-	if range_indicator:
-		range_indicator.visible = false
+	# 销毁范围指示器和告警图标
+	var ri := get_node_or_null("RangeIndicator") as RangeIndicator
+	if ri: ri.play_destroy()
+	var ai := get_node_or_null("AlertIcon") as Label
+	if ai: ai.visible = false
 	# 爆炸粒子
 	_spawn_death_particles()
 	# 给附近英雄发奖励
@@ -189,7 +194,7 @@ func _spawn_death_particles() -> void:
 	particles.emitting = true; particles.one_shot = true
 	particles.amount = 30; particles.lifetime = 0.6
 	particles.explosiveness = 1.0
-	particles.texture = preload("res://icon.svg") if ResourceLoader.exists("res://icon.svg") else null
+	particles.texture = null  # 无贴图时用默认
 	get_parent().add_child(particles)
 	particles.global_position = global_position
 	var tw := create_tween()
@@ -208,8 +213,55 @@ func _reward_nearby() -> void:
 					node.add_gold(stats.gold_reward)
 
 func _update_label() -> void:
+	if not label: return
 	match stats.tower_tier:
 		TowerStats.Tier.T1: label.text = "T1"
 		TowerStats.Tier.T2: label.text = "T2"
 		TowerStats.Tier.T3: label.text = "T3"
 		TowerStats.Tier.T4: label.text = "水晶"
+
+func _get_or_create_node(node_name: String, node_type) -> Node:
+	var n := get_node_or_null(node_name)
+	if not n:
+		n = node_type.new()
+		n.name = node_name
+		add_child(n)
+	return n
+
+func _get_or_create_label() -> Label:
+	var n := get_node_or_null("TowerLabel") as Label
+	if not n:
+		n = Label.new()
+		n.name = "TowerLabel"
+		n.add_theme_font_size_override("font_size", 14)
+		n.add_theme_color_override("font_color", Color.WHITE)
+		n.position = Vector2(-20, -60)
+		add_child(n)
+	return n
+
+func _get_or_create_hpbar() -> ProgressBar:
+	var hc := get_node_or_null("HealthBar") as Control
+	if not hc:
+		hc = Control.new(); hc.name = "HealthBar"; hc.position = Vector2(-40, -50)
+		add_child(hc)
+	var pb := hc.get_node_or_null("ProgressBar") as ProgressBar
+	if not pb:
+		pb = ProgressBar.new(); pb.name = "ProgressBar"
+		pb.size = Vector2(80, 6)
+		hc.add_child(pb)
+	return pb
+
+func _get_or_create_indicator() -> RangeIndicator:
+	var n := get_node_or_null("RangeIndicator") as RangeIndicator
+	if not n:
+		n = RangeIndicator.new(); n.name = "RangeIndicator"; add_child(n)
+	return n
+
+func _get_or_create_alert() -> Label:
+	var n := get_node_or_null("AlertIcon") as Label
+	if not n:
+		n = Label.new(); n.name = "AlertIcon"
+		var script := load("res://scripts/moba/alert_icon.gd")
+		if script: n.set_script(script)
+		add_child(n)
+	return n

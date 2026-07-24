@@ -37,7 +37,7 @@ func _apply_type_defaults() -> void:
 ## 随时间成长：每3分钟全属性+10%
 func apply_growth(minutes: float) -> void:
 	_game_time_minutes = minutes
-	var mul := 1.0 + floor(minutes / 3.0) * growth_rate
+	var mul: float = 1.0 + floor(minutes / 3.0) * growth_rate
 	max_hp = int(max_hp * mul); current_hp = max_hp
 	attack = int(attack * mul)
 

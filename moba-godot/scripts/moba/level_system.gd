@@ -23,7 +23,7 @@ signal xp_changed(current_xp: int, xp_to_next: int)
 @export var skill_w_unlock: int = 2
 @export var skill_r_unlock: int = 4
 
-var stats: CharacterStats
+var stats: CharacterStats = null
 
 
 func _ready() -> void:
