@@ -1055,7 +1055,7 @@ class Tower extends Entity {
 }
 
 class Monster extends Entity {
-    constructor(id, x, y, type, campType = null) {
+    constructor(id, x, y, type, campType = null, unitIndex = 0) {
         const isBaron = type === 'baron';
         const isCamp = type === 'camp';
         const r = isCamp ? 25 : (isBaron ? BARON_RADIUS : DRAGON_RADIUS);
