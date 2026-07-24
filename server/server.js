@@ -1485,8 +1485,8 @@ class Game {
     }
 
     addPlayer(ws, role) {
-        const blueCount = this.heroes.filter(h => h.team === TEAM_BLUE).length;
-        const redCount = this.heroes.filter(h => h.team === TEAM_RED).length;
+        const blueCount = this.heroes.filter(h => h.team === TEAM_BLUE && !h.dead).length;
+        const redCount = this.heroes.filter(h => h.team === TEAM_RED && !h.dead).length;
         const team = blueCount <= redCount ? TEAM_BLUE : TEAM_RED;
         const x = team === TEAM_BLUE ? 300 : MAP_WIDTH - 300;
         const y = MAP_HEIGHT / 2 + (this.heroes.length - (team === TEAM_BLUE ? 0 : PLAYERS_PER_TEAM)) * 120;
@@ -1502,7 +1502,7 @@ class Game {
 
     removePlayer(ws) {
         const hero = this.players.get(ws);
-        if (hero) { hero.dead = true; this.players.delete(ws); }
+        if (hero) { hero.dead = true; this.players.delete(ws); this.heroes = this.heroes.filter(h => h !== hero); }
         if (this.players.size === 0) {
             if (this.resetTimer) { clearTimeout(this.resetTimer); this.resetTimer = null; }
             this.reset();
@@ -1847,7 +1847,7 @@ wss.on('connection', (ws) => {
                     if (game.resetTimer) { clearTimeout(game.resetTimer); game.resetTimer = null; }
                     game.reset();
                 }
-                if (game.heroes.length >= PLAYERS_PER_TEAM * 2) {
+                if (game.heroes.filter(h => !h.dead).length >= PLAYERS_PER_TEAM * 2) {
                     ws.send(JSON.stringify({ type: 'error', message: '房间已满，请等待本局结束或 15 秒后自动重置' }));
                     ws.close(); return;
                 }
