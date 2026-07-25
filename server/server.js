@@ -793,13 +793,13 @@ class Minion extends Entity {
         // 基础属性
         if (type === 'cannon') {
             this.baseHp = isSuper ? 1620 : 900; this.baseAtk = isSuper ? 195 : 130;
-            this.attackSpeed = 0.5; this.moveSpeed = 280; this.attackRange = 450;
+            this.attackSpeed = 0.5; this.moveSpeed = 110; this.attackRange = 450;
             this.goldValue = 120; this.xpValue = 55;
             this.surviveTimer = 0;
             this.berserk = false;
         } else {
             this.baseHp = 550; this.baseAtk = 45;
-            this.attackSpeed = 1.0; this.moveSpeed = 300; this.attackRange = 120;
+            this.attackSpeed = 1.0; this.moveSpeed = 120; this.attackRange = 120;
             this.goldValue = 65; this.xpValue = 30;
         }
         // 随时间成长（每3分钟+一次）
@@ -935,6 +935,12 @@ class Minion extends Entity {
                     this.x += Math.cos(angle) * ms * dt;
                     this.y += Math.sin(angle) * ms * dt;
                 }
+            } else {
+                // 路径走完：往敌方基地方向继续走
+                const dir = this.team === TEAM_BLUE ? 1 : -1;
+                let ms = this.moveSpeed;
+                if (this.frenzyBuffed) ms *= 1.5;
+                this.x += dir * ms * dt;
             }
         }
         if (this.attackCd > 0) this.attackCd -= dt;
@@ -1093,7 +1099,8 @@ class Monster extends Entity {
             this.defense = cc.def || 168; this.magicDef = cc.mdef || 120;
             this.atkType = cc.atkType || 'melee';
             this.radius = 25; this.refreshInterval = 70;
-            this.respawnTimer = -(30); this.dead = true;
+            this.respawnTimer = 40; // 70-30=40, 30秒后首次刷新
+            this.dead = true;
             this.aggroRange = 500; this.chaseRange = 800;
             this.isCamp = true;
         } else {
@@ -1102,10 +1109,9 @@ class Monster extends Entity {
             this.attackRange = 200; this.attackSpeed = 0.7;
             this.goldValue = isBaron ? 30 : 105; this.xpValue = isBaron ? 50 : 0;
             this.refreshInterval = isBaron ? 270 : 180;
-            this.respawnTimer = -(60 * 2);
+            this.respawnTimer = isBaron ? -210 : 60;  // 主宰8分钟 暴君2分钟
             this.dead = true;
         }
-        this.respawnTimer = this._initRespawn || this.respawnTimer; // preserve
         this.spawnX = x; this.spawnY = y;
         this.threatMap = new Map();
         this.resetTimer = 0;
@@ -1423,7 +1429,7 @@ class Game {
         this.heroes = []; this.minions = []; this.towers = []; this.monsters = [];
         this.projectiles = []; this.effects = [];
         this.delayedEffects = []; this.vortexEffects = [];
-        this.lastSpawn = 0; this.players = new Map();
+        this.lastSpawn = -20; this.players = new Map();  // 首波10秒刷新
         this.resetTimer = null;
         this.goldHistory = []; // 经济曲线 [{t, blueGold, redGold}]
         this.lastGoldHistory = 0;
@@ -1475,7 +1481,7 @@ class Game {
         this.heroes = []; this.minions = []; this.towers = []; this.monsters = [];
         this.projectiles = []; this.effects = [];
         this.delayedEffects = []; this.vortexEffects = [];
-        this.lastSpawn = 0; this.players = new Map();
+        this.lastSpawn = -20; this.players = new Map();  // 首波10秒刷新
         this.resetTimer = null;
         this.goldHistory = [];
         this.lastGoldHistory = 0;

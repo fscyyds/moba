@@ -24,13 +24,13 @@ func _init(t: MinionType = MinionType.MELEE, wave: int = 1) -> void:
 func _apply_base() -> void:
 	match minion_type:
 		MinionType.MELEE:
-			max_hp = 500; attack = 40; attack_speed = 1.0; move_speed = 200
+			max_hp = 500; attack = 40; attack_speed = 1.0; move_speed = 120
 			attack_range = 80; gold_value = 20; xp_value = 30
 		MinionType.RANGED:
-			max_hp = 300; attack = 50; attack_speed = 0.8; move_speed = 200
+			max_hp = 300; attack = 50; attack_speed = 0.8; move_speed = 120
 			attack_range = 400; gold_value = 25; xp_value = 35
 		MinionType.CANNON:
-			max_hp = 1200; attack = 80; attack_speed = 0.5; move_speed = 180
+			max_hp = 1200; attack = 80; attack_speed = 0.5; move_speed = 110
 			attack_range = 450; gold_value = 60; xp_value = 80
 		MinionType.SUPER:
 			max_hp = 2000; attack = 100; attack_speed = 1.0; move_speed = 220
