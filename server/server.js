@@ -793,7 +793,7 @@ class Minion extends Entity {
         // 基础属性
         if (type === 'cannon') {
             this.baseHp = isSuper ? 1620 : 900; this.baseAtk = isSuper ? 195 : 130;
-            this.attackSpeed = 0.5; this.moveSpeed = 280; this.attackRange = 650;
+            this.attackSpeed = 0.5; this.moveSpeed = 280; this.attackRange = 450;
             this.goldValue = 120; this.xpValue = 55;
             this.surviveTimer = 0;
             this.berserk = false;

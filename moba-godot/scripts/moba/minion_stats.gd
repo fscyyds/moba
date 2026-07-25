@@ -31,7 +31,7 @@ func _apply_base() -> void:
 			attack_range = 400; gold_value = 25; xp_value = 35
 		MinionType.CANNON:
 			max_hp = 1200; attack = 80; attack_speed = 0.5; move_speed = 180
-			attack_range = 500; gold_value = 60; xp_value = 80
+			attack_range = 450; gold_value = 60; xp_value = 80
 		MinionType.SUPER:
 			max_hp = 2000; attack = 100; attack_speed = 1.0; move_speed = 220
 			attack_range = 100; gold_value = 40; xp_value = 50
