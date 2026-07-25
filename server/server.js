@@ -952,14 +952,14 @@ class Tower extends Entity {
         if (tier === 'outer') {
             this.maxHp = 2500; this.hp = 2500;
             this.attackDamage = 180; this.baseDamage = 180;
-            this.attackRange = 800; this.attackSpeed = 1.25; // 1/0.8
+            this.attackRange = 400; this.attackSpeed = 1.25; // 1/0.8
             this.stackPerHit = 0.2; this.maxStack = 2.0; // 最高 360
             this.goldValue = 150; this.xpValue = 80;
             this.minionMeleeMul = 1.5; this.minionCannonMul = 1.0;
         } else if (tier === 'inner') {
             this.maxHp = 3500; this.hp = 3500;
             this.attackDamage = 220; this.baseDamage = 220;
-            this.attackRange = 850; this.attackSpeed = 1.25;
+            this.attackRange = 450; this.attackSpeed = 1.25;
             this.stackPerHit = 0.25; this.maxStack = 2.5; // 最高 550
             this.goldValue = 200; this.xpValue = 100;
             this.slowAura = true; // 减速光环
@@ -970,7 +970,7 @@ class Tower extends Entity {
         } else if (tier === 'crystal') {
             this.maxHp = 6000; this.hp = 6000;
             this.attackDamage = 350; this.baseDamage = 350;
-            this.attackRange = 900; this.attackSpeed = 1.25;
+            this.attackRange = 800; this.attackSpeed = 1.25;
             this.stackPerHit = 0; this.maxStack = 0; // 水晶不递增
             this.goldValue = 400; this.xpValue = 200;
             this.execute = true; // 斩杀机制
@@ -1487,7 +1487,10 @@ class Game {
     addPlayer(ws, role) {
         const blueCount = this.heroes.filter(h => h.team === TEAM_BLUE && !h.dead).length;
         const redCount = this.heroes.filter(h => h.team === TEAM_RED && !h.dead).length;
-        const team = blueCount <= redCount ? TEAM_BLUE : TEAM_RED;
+        var team;
+        if (blueCount < redCount) team = TEAM_BLUE;
+        else if (redCount < blueCount) team = TEAM_RED;
+        else team = Math.random() < 0.5 ? TEAM_BLUE : TEAM_RED;
         const x = team === TEAM_BLUE ? 300 : MAP_WIDTH - 300;
         const y = MAP_HEIGHT / 2 + (this.heroes.length - (team === TEAM_BLUE ? 0 : PLAYERS_PER_TEAM)) * 120;
         const hero = new Hero(this.nextId++, x, y, team, role);

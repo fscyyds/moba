@@ -1,146 +1,200 @@
 extends CharacterBody2D
 class_name Minion
 
-## 小兵 AI — WALKING → CHASING → ATTACKING → DEAD
+## 小兵 AI 状态机 — MARCHING → ATTACKING → RETREATING → DEAD
 
-enum State { WALKING, CHASING, ATTACKING, DEAD }
-var state: State = State.WALKING
+enum State { MARCHING, ATTACKING, RETREATING, DEAD }
+var state: State = State.MARCHING
 
-@onready var stats: MinionStats = $MinionStats
+@export var stats: MinionStats
+@export var lane: String = "mid"
+@export var team: String = "team_blue"
+@export var move_dir: int = 1  # 1=右+上, -1=左+下
+
+@onready var nav: NavigationAgent2D = $NavigationAgent2D
 @onready var sprite: Sprite2D = $Sprite2D
-@onready var hp_bar: ProgressBar = $HealthBar/ProgressBar
-
-@export var lane_path: Path2D           # 所属兵线
-@export var path_ratio: float = 0.0      # 在路径上的位置
-@export var move_speed: float = 120.0
-@export var move_direction: int = 1      # 1=蓝方(ratio递增), -1=红方(ratio递减)
-@export var aggro_range: float = 300.0
-@export var disengage_range: float = 400.0
+@onready var aggro_zone: Area2D = $AggroZone
+@onready var attack_zone: Area2D = $AttackZone
+@onready var hp_bar: Control = $HealthBar
+@onready var atk_timer: Timer = $AttackCooldown
+@onready var death_timer: Timer = $DeathTimer
+@onready var death_fx: GPUParticles2D = $DeathFX
 
 var current_target: Node2D = null
-var attack_timer: float = 0.0
-var random_offset: Vector2 = Vector2.ZERO
+var hit_flash_timer: float = 0.0
+var spawn_position: Vector2
+var is_ranged: bool = false
+
+const AGGRO_RANGE: float = 600.0
+const DISENGAGE_RANGE: float = 1200.0
+const WAYPOINTS: Dictionary = {
+	"top_blue": [Vector2(1500,8500), Vector2(5000,7500), Vector2(8500,1500)],
+	"mid_blue": [Vector2(1800,8200), Vector2(5000,5000), Vector2(8200,1800)],
+	"bot_blue": [Vector2(2200,7800), Vector2(7500,5000), Vector2(7800,2200)],
+	"top_red":  [Vector2(8500,1500), Vector2(5000,7500), Vector2(1500,8500)],
+	"mid_red":  [Vector2(8200,1800), Vector2(5000,5000), Vector2(1800,8200)],
+	"bot_red":  [Vector2(7800,2200), Vector2(7500,5000), Vector2(2200,7800)],
+}
+var waypoint_index: int = 0
+var waypoints: Array = []
+
 
 func _ready() -> void:
-	random_offset = Vector2(randf_range(-20, 20), randf_range(-20, 20))
-	if stats:
-		stats.died.connect(_on_death)
-		stats.hp_changed.connect(_on_hp)
+	add_to_group(team); add_to_group("minions")
+	spawn_position = global_position
+	is_ranged = stats.minion_type == MinionStats.MinionType.RANGED or stats.minion_type == MinionStats.MinionType.CANNON
+	setup_waypoints()
+	update_color()
+	nav.target_desired_distance = 10
+	if atk_timer: atk_timer.wait_time = 1.0 / stats.attack_speed
+
+func setup_waypoints() -> void:
+	var key := lane + "_" + ("blue" if team == "team_blue" else "red")
+	waypoints = WAYPOINTS.get(key, [])
+	if waypoints.is_empty(): return
+	nav.target_position = waypoints[0]
+
+func update_color() -> void:
+	if not sprite: return
+	var col := Color.LIGHT_BLUE if team == "team_blue" else Color.LIGHT_CORAL
+	match stats.minion_type:
+		MinionStats.MinionType.MELEE: col = col.darkened(0.1)
+		MinionStats.MinionType.RANGED: col = col.lightened(0.2)
+		MinionStats.MinionType.CANNON: col = col.lightened(0.4)
+		MinionStats.MinionType.SUPER: col = Color.GOLD
+	sprite.modulate = col
 
 func _physics_process(delta: float) -> void:
 	if state == State.DEAD: return
+	hit_flash_timer = max(0.0, hit_flash_timer - delta)
+	if sprite: sprite.modulate.a = 0.5 if hit_flash_timer > 0 and fmod(hit_flash_timer, 0.15) < 0.08 else 1.0
+	update_hp_bar()
 
 	match state:
-		State.WALKING:
-			_walk_along_path(delta)
-			var enemy := _find_enemy()
-			if enemy and global_position.distance_to(enemy.global_position) < aggro_range:
-				current_target = enemy
-				state = State.CHASING
-		State.CHASING:
-			if not current_target or not _target_valid():
-				current_target = null
-				state = State.WALKING
-				return
-			var d := global_position.distance_to(current_target.global_position)
-			if d > disengage_range:
-				current_target = null
-				state = State.WALKING
-			elif d <= (stats.attack_range if stats else 60):
-				state = State.ATTACKING
-			else:
-				var dir := (current_target.global_position - global_position).normalized()
-				velocity = dir * move_speed
-				move_and_slide()
-		State.ATTACKING:
-			if not current_target or not _target_valid():
-				current_target = null
-				state = State.WALKING
-				return
-			var d := global_position.distance_to(current_target.global_position)
-			if d > (stats.attack_range if stats else 60) * 1.3:
-				state = State.CHASING
-				return
-			attack_timer += delta
-			if attack_timer >= (1.0 / stats.attack_speed if stats else 1.0):
-				attack_timer = 0.0
-				if current_target and _target_valid():
-					var es := current_target.get_node_or_null("CharacterStats") as CharacterStats
-					if es: es.take_damage(stats.attack if stats else 40)
-					else: _try_damage_minion(current_target)
+		State.MARCHING: _march(delta)
+		State.ATTACKING: _attack(delta)
+		State.RETREATING: _retreat(delta)
 
+func _march(_delta: float) -> void:
+	var target := _find_target()
+	if target:
+		current_target = target; state = State.ATTACKING; return
+	if waypoints.is_empty():
+		velocity = Vector2(move_dir * stats.move_speed, 0)
+		move_and_slide(); return
+	if waypoint_index >= waypoints.size(): return
+	var wp := waypoints[waypoint_index]
+	if global_position.distance_to(wp) < 50:
+		waypoint_index += 1
+		if waypoint_index >= waypoints.size(): return
+		wp = waypoints[waypoint_index]
+	var dir := (wp - global_position).normalized()
+	velocity = dir * stats.move_speed
 	move_and_slide()
 
-func _walk_along_path(delta: float) -> void:
-	if not lane_path: return
-	path_ratio += move_direction * (move_speed / lane_path.curve.get_baked_length()) * delta
-	path_ratio = clamp(path_ratio, 0.0, 1.0)
-	var pos := lane_path.curve.sample_baked(path_ratio * lane_path.curve.get_baked_length())
-	global_position = pos + random_offset
+func _attack(_delta: float) -> void:
+	if not _target_valid():
+		current_target = null; state = State.RETREATING; return
+	var d := global_position.distance_to(current_target.global_position)
+	if d > DISENGAGE_RANGE:
+		current_target = null; state = State.RETREATING; return
+	if d <= stats.attack_range:
+		velocity = Vector2.ZERO
+		if atk_timer and atk_timer.is_stopped():
+			atk_timer.start()
+	else:
+		var dir := (current_target.global_position - global_position).normalized()
+		velocity = dir * stats.move_speed
+	move_and_slide()
 
-func _find_enemy() -> Node2D:
-	var my_team := ""
-	for g in get_groups():
-		if g.begins_with("team_"): my_team = g; break
+func _retreat(_delta: float) -> void:
+	current_target = null
+	var target := _find_target()
+	if target:
+		current_target = target; state = State.ATTACKING; return
+	state = State.MARCHING
 
-	# 优先级 0：最近敌方小兵
-	var best_creep: Node2D = null; var bd: float = INF
-	for node in get_tree().get_nodes_in_group("minions"):
-		if node.is_in_group(my_team): continue
-		var d := global_position.distance_to(node.global_position)
-		if d < aggro_range and d < bd:
-			bd = d; best_creep = node
-	if best_creep: return best_creep
+func _on_attack_timer_timeout() -> void:
+	if state != State.ATTACKING or not _target_valid(): return
+	if is_ranged:
+		_fire_projectile()
+	else:
+		_melee_hit()
 
-	# 优先级 1：敌方英雄
-	for node in get_tree().get_nodes_in_group("heroes"):
-		if node.is_in_group(my_team): continue
-		var s := node.get_node_or_null("CharacterStats") as CharacterStats
-		if s and s.is_dead: continue
-		var d := global_position.distance_to(node.global_position)
-		if d < aggro_range: return node
+func _melee_hit() -> void:
+	if not current_target: return
+	if current_target.has_method("take_damage"):
+		current_target.take_damage(stats.attack)
+	else:
+		var ms := current_target.get_node_or_null("MinionStats") as MinionStats
+		if ms: ms.take_damage(stats.attack)
 
-	# 优先级 2：敌方防御塔
-	for node in get_tree().get_nodes_in_group("towers"):
-		if node.is_in_group(my_team): continue
-		var ts := node.get_node_or_null("TowerStats") as TowerStats
-		if ts and ts.is_dead: continue
-		var rng := stats.attack_range if stats else 60.0
-		var d := global_position.distance_to(node.global_position)
-		if d < rng + 50: return node
+func _fire_projectile() -> void:
+	var proj := Projectile.new()
+	proj.setup(current_target.global_position, stats.attack, team)
+	get_parent().add_child(proj)
+	proj.global_position = global_position
+
+func _find_target() -> Node2D:
+	var enemies: Array[Node2D] = []
+	for body in aggro_zone.get_overlapping_bodies():
+		if body == self or body.is_in_group(team): continue
+		var ms := body.get_node_or_null("MinionStats") as MinionStats
+		if ms and ms.is_dead(): continue
+		enemies.append(body)
+	if enemies.is_empty(): return null
+
+	# 优先级：最近敌兵 → 英雄 → 塔 → 水晶
+	enemies.sort_custom(func(a,b): return global_position.distance_to(a.global_position) < global_position.distance_to(b.global_position))
+	for e in enemies:
+		if e.is_in_group("minions"): return e
+	for e in enemies:
+		if e.is_in_group("heroes"): return e
+	for e in enemies:
+		if e.is_in_group("towers"): return e
+	for e in enemies:
+		if e.is_in_group("crystals"): return e
 	return null
 
 func _target_valid() -> bool:
 	if not current_target or not is_instance_valid(current_target): return false
-	if current_target is CharacterBody2D:
-		var es := current_target.get_node_or_null("CharacterStats") as CharacterStats
-		if es and es.is_dead: return false
-		var ms := current_target.get_node_or_null("MinionStats") as MinionStats
-		if ms and ms.is_dead: return false
+	if current_target.has_method("is_dead") and current_target.is_dead(): return false
+	var ms := current_target.get_node_or_null("MinionStats") as MinionStats
+	if ms and ms.is_dead(): return false
 	return true
 
-func _try_damage_minion(target: Node2D) -> void:
-	var ms := target.get_node_or_null("MinionStats") as MinionStats
-	if ms: ms.take_damage(stats.attack if stats else 40)
+func take_damage(dmg: int) -> void:
+	if state == State.DEAD: return
+	if stats: stats.take_damage(dmg)
+	hit_flash_timer = 0.1
+	if stats and stats.is_dead(): _die()
 
-func _on_death(gold: int, xp: int) -> void:
+func _die() -> void:
 	state = State.DEAD
-	# 缩小消失动画
-	var tw := create_tween()
-	tw.tween_property(self, "scale", Vector2.ZERO, 0.3)
-	tw.tween_callback(queue_free)
-	# 给附近英雄发奖励
-	var reward_list: Array[Node] = []
-	reward_list.assign(get_tree().get_nodes_in_group("team_blue") + get_tree().get_nodes_in_group("team_red"))
-	for node in reward_list:
-		if node is CharacterBody2D and global_position.distance_to(node.global_position) < 800:
-			# 发放金币和经验
-			if node.has_method("add_gold"):
-				node.add_gold(gold)
-			var ls := node.get_node_or_null("LevelSystem") as LevelSystem
-			if ls: ls.add_xp(xp)
+	collision_layer = 0; collision_mask = 0
+	if death_fx: death_fx.emitting = true
+	if death_timer: death_timer.start(0.8)
+	_reward_nearby()
 
-func _on_hp(current: int, maximum: int) -> void:
-	if hp_bar:
-		hp_bar.max_value = maximum
-		hp_bar.value = current
+func _reward_nearby() -> void:
+	for h in get_tree().get_nodes_in_group("heroes"):
+		if h.is_in_group(team): continue
+		var d := global_position.distance_to(h.global_position)
+		if d < 500: _give_reward(h, d < 300)
+
+func _give_reward(hero: Node2D, is_killer: bool) -> void:
+	if hero.has_method("add_gold"):
+		hero.add_gold(stats.gold_value if is_killer else stats.gold_value / 2)
+	if hero.has_method("add_xp"):
+		hero.add_xp(stats.xp_value if is_killer else stats.xp_value / 2)
+
+func _on_death_timer_timeout() -> void:
+	queue_free()
+
+func update_hp_bar() -> void:
+	if not hp_bar or not stats: return
+	hp_bar.visible = stats.current_hp < stats.max_hp
+	var fill := hp_bar.get_node_or_null("Fill") as ColorRect
+	if fill:
+		fill.size.x = 40.0 * stats.current_hp / stats.max_hp
+		fill.position.x = -20

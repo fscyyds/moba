@@ -1,52 +1,52 @@
-extends Node
+extends Resource
 class_name MinionStats
 
-## 小兵属性 — 3种类型，支持随时间成长
+## 小兵属性数据 — 4种类型 + 波次成长
 
-signal died(gold: int, xp: int)
-signal hp_changed(current: int, maximum: int)
-
-enum MinionType { MELEE, RANGED, CANNON }
+enum MinionType { MELEE, RANGED, CANNON, SUPER }
 
 @export var minion_type: MinionType = MinionType.MELEE
 @export var max_hp: int = 500
 @export var current_hp: int = 500
 @export var attack: int = 40
 @export var attack_speed: float = 1.0
-@export var attack_range: float = 60
-@export var gold_value: int = 30
-@export var xp_value: int = 50
-@export var growth_rate: float = 0.1  # 每3分钟 +10%
+@export var move_speed: float = 200.0
+@export var attack_range: float = 80.0
+@export var gold_value: int = 20
+@export var xp_value: int = 30
 
-var is_dead: bool = false
-var _game_time_minutes: float = 0.0
-
-func _ready() -> void:
-	_apply_type_defaults()
+func _init(t: MinionType = MinionType.MELEE, wave: int = 1) -> void:
+	minion_type = t
+	_apply_base()
+	_apply_growth(wave)
 	current_hp = max_hp
 
-func _apply_type_defaults() -> void:
+func _apply_base() -> void:
 	match minion_type:
 		MinionType.MELEE:
-			max_hp = 500; attack = 40; attack_speed = 1.0; attack_range = 60; gold_value = 30; xp_value = 50
+			max_hp = 500; attack = 40; attack_speed = 1.0; move_speed = 200
+			attack_range = 80; gold_value = 20; xp_value = 30
 		MinionType.RANGED:
-			max_hp = 300; attack = 55; attack_speed = 0.8; attack_range = 250; gold_value = 35; xp_value = 55
+			max_hp = 300; attack = 50; attack_speed = 0.8; move_speed = 200
+			attack_range = 400; gold_value = 25; xp_value = 35
 		MinionType.CANNON:
-			max_hp = 1200; attack = 120; attack_speed = 0.5; attack_range = 200; gold_value = 80; xp_value = 100
+			max_hp = 1200; attack = 80; attack_speed = 0.5; move_speed = 180
+			attack_range = 500; gold_value = 60; xp_value = 80
+		MinionType.SUPER:
+			max_hp = 2000; attack = 100; attack_speed = 1.0; move_speed = 220
+			attack_range = 100; gold_value = 40; xp_value = 50
 
-## 随时间成长：每3分钟全属性+10%
-func apply_growth(minutes: float) -> void:
-	_game_time_minutes = minutes
-	var mul: float = 1.0 + floor(minutes / 3.0) * growth_rate
-	max_hp = int(max_hp * mul); current_hp = max_hp
+## 每波属性+8%
+func _apply_growth(wave: int) -> void:
+	var mul := 1.0 + (wave - 1) * 0.08
+	max_hp = int(max_hp * mul)
 	attack = int(attack * mul)
 
-func take_damage(dmg: int) -> void:
-	if is_dead: return
-	var actual := int(ceil(float(dmg) * (1.0 - 100.0 / 702.0)))  # 防御100
-	actual = max(actual, 1)
+## 受伤
+func take_damage(dmg: int) -> int:
+	var actual := max(dmg, 1)
 	current_hp = max(current_hp - actual, 0)
-	hp_changed.emit(current_hp, max_hp)
-	if current_hp <= 0:
-		is_dead = true
-		died.emit(gold_value, xp_value)
+	return actual
+
+func is_dead() -> bool:
+	return current_hp <= 0

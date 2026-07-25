@@ -8,7 +8,7 @@
         * { box-sizing: border-box; user-select: none; margin: 0; padding: 0; }
         html, body { width: 100%; height: 100%; overflow: hidden; background: #111; color: #fff; font-family: 'Microsoft YaHei', sans-serif; }
         #gameContainer { position: relative; width: 100%; height: 100%; }
-        canvas { display: block; background: #1a2a1a; cursor: crosshair; }
+        canvas { display: block; background: #1a2a1a; cursor: crosshair; transform: perspective(3000px) rotateX(45deg); transform-origin: 50% 0%; }
 
         #menu, #gameover { position: absolute; inset: 0; background: rgba(5,10,15,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 20; }
         #menu h1 { font-size: 52px; margin-bottom: 20px; background: linear-gradient(90deg, #4af, #f55); -webkit-background-clip: text; color: transparent; }

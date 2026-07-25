@@ -675,10 +675,13 @@ function sendWASDMove() {
     if (!me || me.dead || me.channeling) return;
 
     let dx = 0, dy = 0;
-    if (keys['w'] || keys['arrowup']) dy -= 1;
-    if (keys['s'] || keys['arrowdown']) dy += 1;
-    if (keys['a'] || keys['arrowleft']) dx -= 1;
-    if (keys['d'] || keys['arrowright']) dx += 1;
+    // 技能键不触发行走
+    if (!keys['q'] && !keys['w'] && !keys['e'] && !keys['r']) {
+        if (keys['w'] || keys['arrowup']) dy -= 1;
+        if (keys['s'] || keys['arrowdown']) dy += 1;
+        if (keys['a'] || keys['arrowleft']) dx -= 1;
+        if (keys['d'] || keys['arrowright']) dx += 1;
+    }
     if (dx === 0 && dy === 0) return;
 
     const now = Date.now();
@@ -781,9 +784,42 @@ function drawMap() {
     for (const t of mapData.terrain || []) {
         const tl = worldToScreen(t.x, t.y);
         const br = worldToScreen(t.x + t.w, t.y + t.h);
-        ctx.fillStyle = '#224422';
+        // 草地纹理
+        ctx.fillStyle = '#2a4a22';
         ctx.fillRect(tl.x, tl.y, br.x - tl.x, br.y - tl.y);
+        // 随机草点增加纹理感
+        for (let i = 0; i < 60; i++) {
+            const gx = t.x + Math.random() * t.w;
+            const gy = t.y + Math.random() * t.h;
+            const gp = worldToScreen(gx, gy);
+            ctx.fillStyle = `rgba(${30+Math.random()*30},${50+Math.random()*40},${20+Math.random()*20},0.4)`;
+            ctx.fillRect(gp.x, gp.y, 2 * scale, 2 * scale);
+        }
     }
+
+    // 河道（地图中央斜穿）
+    const riverPoints = [
+        {x: 1000, y: 2000}, {x: 2500, y: 4500}, {x: 5000, y: 5000},
+        {x: 7500, y: 5500}, {x: 9000, y: 8000}
+    ];
+    ctx.lineWidth = 280 * scale;
+    ctx.strokeStyle = 'rgba(30, 100, 140, 0.45)';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < riverPoints.length; i++) {
+        const rp = worldToScreen(riverPoints[i].x, riverPoints[i].y);
+        i === 0 ? ctx.moveTo(rp.x, rp.y) : ctx.lineTo(rp.x, rp.y);
+    }
+    ctx.stroke();
+    // 河道高光线
+    ctx.lineWidth = 80 * scale;
+    ctx.strokeStyle = 'rgba(80, 160, 200, 0.5)';
+    ctx.beginPath();
+    for (let i = 0; i < riverPoints.length; i++) {
+        const rp = worldToScreen(riverPoints[i].x, riverPoints[i].y);
+        i === 0 ? ctx.moveTo(rp.x, rp.y) : ctx.lineTo(rp.x, rp.y);
+    }
+    ctx.stroke();
     // 道路两侧碎石过渡带
     for (const r of mapData.roads || []) {
         const tl = worldToScreen(r.x - 50, r.y - 10);
@@ -904,17 +940,46 @@ function drawMap() {
         ctx.fillStyle = 'rgba(180, 200, 255, 0.15)';
         ctx.beginPath(); ctx.arc(pos.x, pos.y, 20 * scale, 0, Math.PI * 2); ctx.fill();
     }
-    // 基地
+    // 基地水晶发光特效
     for (const b of mapData.bases || []) {
         const pos = worldToScreen(b.x, b.y);
-        ctx.fillStyle = b.team === 0 ? 'rgba(50,100,255,0.2)' : 'rgba(255,50,50,0.2)';
+        const color = b.team === 0 ? 'rgba(50,150,255,' : 'rgba(255,80,80,';
+        // 外层光晕
+        for (let i = 3; i > 0; i--) {
+            ctx.fillStyle = color + (0.05 * i) + ')';
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, (b.radius + i * 50) * scale, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // 水晶本体
+        const glow = 0.5 + 0.3 * Math.sin(Date.now() * 0.003);
+        ctx.fillStyle = color + glow + ')';
         ctx.beginPath(); ctx.arc(pos.x, pos.y, b.radius * scale, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.beginPath(); ctx.arc(pos.x - b.radius*0.2*scale, pos.y - b.radius*0.2*scale, b.radius*0.3*scale, 0, Math.PI*2); ctx.fill();
     }
     // 泉水
     for (const f of mapData.fountains || []) {
         const pos = worldToScreen(f.x, f.y);
-        ctx.fillStyle = f.team === 0 ? 'rgba(100, 200, 255, 0.25)' : 'rgba(255, 100, 100, 0.25)';
+        const fColor = f.team === 0 ? 'rgba(80,180,255,' : 'rgba(255,100,100,';
+        // 泉水波动环
+        for (let w = 0; w < 3; w++) {
+            const waveR = (f.radius + 20 + w * 30 + (Date.now()*0.05 % 40)) * scale;
+            ctx.strokeStyle = fColor + Math.max(0, 0.3 - w*0.1) + ')';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(pos.x, pos.y, waveR, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.fillStyle = fColor + '0.2)';
         ctx.beginPath(); ctx.arc(pos.x, pos.y, f.radius * scale, 0, Math.PI * 2); ctx.fill();
+        // 治愈粒子
+        for (let p = 0; p < 8; p++) {
+            const pa = (Date.now() * 0.002 + p) % (Math.PI * 2);
+            const pr = f.radius * 0.6 * scale;
+            const px = pos.x + Math.cos(pa) * pr;
+            const py = pos.y + Math.sin(pa) * pr * 0.4;
+            ctx.fillStyle = fColor + '0.6)';
+            ctx.beginPath(); ctx.arc(px, py, 3 * scale, 0, Math.PI * 2); ctx.fill();
+        }
     }
     // 草丛
     for (const b of mapData.bushes || []) {
