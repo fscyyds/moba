@@ -1,8 +1,0 @@
-[gd_scene format=3]
-
-[node name="Minion" type="MeshInstance3D"]
-mesh = SubResource("box")
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
-
-[sub_resource type="BoxMesh" id="box"]
-size = Vector3(1.2, 1.2, 1.2)

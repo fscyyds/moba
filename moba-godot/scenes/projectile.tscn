@@ -1,8 +1,0 @@
-[gd_scene format=3]
-
-[node name="Projectile" type="MeshInstance3D"]
-mesh = SubResource("sphere")
-
-[sub_resource type="SphereMesh" id="sphere"]
-radius = 0.4
-height = 0.8

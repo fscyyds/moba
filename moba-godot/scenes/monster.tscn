@@ -1,8 +1,0 @@
-[gd_scene format=3]
-
-[node name="Monster" type="MeshInstance3D"]
-mesh = SubResource("sphere")
-
-[sub_resource type="SphereMesh" id="sphere"]
-radius = 1.5
-height = 3.0
