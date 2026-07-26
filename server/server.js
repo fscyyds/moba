@@ -26,6 +26,36 @@ const BARON_RADIUS = 75;
 const LANE_TOP_Y = 7000;
 const LANE_BOT_Y = 3000;
 const ULTIMATE_UNLOCK_LEVEL = 3;
+const MAX_LEVEL = 12;
+const SKILL_MAX_LEVEL = { Q: 4, W: 4, E: 4, R: 3 };
+
+// 升级所需经验公式
+function calcExpNeeded(level) {
+    return 100 + (level - 1) * 150 + Math.max(0, level - 5) * 100;
+}
+
+// 追赶/领先经验修正
+function getExpModifier(hero, game) {
+    if (!game || !game.heroes) return 1.0;
+    let totalLevel = 0, count = 0;
+    for (const h of game.heroes) { if (!h.dead) { totalLevel += h.level; count++; } }
+    if (count === 0) return 1.0;
+    const avgLevel = totalLevel / count;
+    const diff = avgLevel - hero.level;
+    if (diff >= 4) return 1.6;
+    if (diff >= 2) return 1.3;
+    if (diff <= -2) return 0.8;
+    return 1.0;
+}
+
+// 等级压制伤害倍率
+function getLevelSuppressionMul(attacker, defender) {
+    const diff = attacker.level - defender.level;
+    if (diff >= 6) return 1.15;
+    if (diff >= 4) return 1.10;
+    if (diff >= 2) return 1.05;
+    return 1.0;
+}
 
 function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
@@ -79,6 +109,9 @@ function serializeState(game) {
             hp: Math.round(h.hp), maxHp: Math.round(h.maxHp),
             mp: Math.round(h.mp), maxMp: Math.round(h.maxMp),
             level: h.level, xp: Math.round(h.xp), xpToLevel: h.xpToLevel,
+            skillPoints: h.skillPoints,
+            skillLevels: { Q: h.skillLevels.Q, W: h.skillLevels.W, E: h.skillLevels.E, R: h.skillLevels.R },
+            ap: h.ap, pDef: h.pDef, mDef: h.mDef,
             faceAngle: Math.round(h.faceAngle * 100) / 100,
             dead: h.dead, respawnTimer: Math.round(h.respawnTimer * 10) / 10,
             kills: h.kills, deaths: h.deaths, gold: h.gold,
@@ -98,10 +131,10 @@ function serializeState(game) {
                 baron: h.buffBaronTimer > 0 ? Math.round(h.buffBaronTimer * 10) / 10 : 0
             },
             skills: {
-                q: { name: h.skillQ.name, desc: h.skillQ.desc, cd: Math.max(0, Math.round(h.skillQ.cd * 10) / 10), max: h.skillQ.maxCd, range: h.skillQ.range },
-                w: { name: h.skillW.name, desc: h.skillW.desc, cd: Math.max(0, Math.round(h.skillW.cd * 10) / 10), max: h.skillW.maxCd, range: h.skillW.range },
-                e: { name: h.skillE.name, desc: h.skillE.desc, cd: Math.max(0, Math.round(h.skillE.cd * 10) / 10), max: h.skillE.maxCd, range: h.skillE.range },
-                r: { name: h.skillR.name, desc: h.skillR.desc, cd: Math.max(0, Math.round(h.skillR.cd * 10) / 10), max: h.skillR.maxCd, range: h.skillR.range, locked: h.level < ULTIMATE_UNLOCK_LEVEL }
+                q: { name: h.skillQ.name, desc: h.skillQ.desc, cd: Math.max(0, Math.round(h.skillQ.cd * 10) / 10), max: h.skillQ.maxCd, range: h.skillQ.range, level: h.skillLevels.Q, maxLevel: SKILL_MAX_LEVEL.Q, unlocked: h.skillQ.unlocked },
+                w: { name: h.skillW.name, desc: h.skillW.desc, cd: Math.max(0, Math.round(h.skillW.cd * 10) / 10), max: h.skillW.maxCd, range: h.skillW.range, level: h.skillLevels.W, maxLevel: SKILL_MAX_LEVEL.W, unlocked: h.skillW.unlocked },
+                e: { name: h.skillE.name, desc: h.skillE.desc, cd: Math.max(0, Math.round(h.skillE.cd * 10) / 10), max: h.skillE.maxCd, range: h.skillE.range, level: h.skillLevels.E, maxLevel: SKILL_MAX_LEVEL.E, unlocked: h.skillE.unlocked },
+                r: { name: h.skillR.name, desc: h.skillR.desc, cd: Math.max(0, Math.round(h.skillR.cd * 10) / 10), max: h.skillR.maxCd, range: h.skillR.range, level: h.skillLevels.R, maxLevel: SKILL_MAX_LEVEL.R, unlocked: h.skillR.unlocked }
             }
         })),
         minions: game.minions.map(m => ({ id: m.id, team: m.team, lane: m.lane, minionType: m.minionType, x: Math.round(m.x), y: Math.round(m.y), hp: Math.round(m.hp), maxHp: Math.round(m.maxHp), dead: m.dead, hitFlash: m.hitFlashTimer > 0, berserk: m.berserk, frenzyBuffed: m.frenzyBuffed })),
@@ -139,6 +172,10 @@ class Entity {
         if (this instanceof Hero && this.teleportTimer > 0) this.teleportTimer = 0;
         // 破甲增伤：目标被破甲时伤害×1.3
         if (this instanceof Hero && this.armorReduced > 0) dmg = Math.floor(dmg * 1.3);
+        // 等级压制：攻击者等级高于目标时增伤
+        if (source instanceof Hero && this instanceof Hero) {
+            dmg = Math.floor(dmg * getLevelSuppressionMul(source, this));
+        }
         // 护盾优先扣除
         if (this instanceof Hero && this.shield > 0) {
             if (dmg <= this.shield) { this.shield -= dmg; dmg = 0; }
@@ -168,6 +205,7 @@ class Entity {
         }
         if (this.hp <= 0) {
             this.dead = true;
+            if (this instanceof Hero) this.deathStreak = (this.deathStreak || 0) + 1;
             // 死亡音效
             if (game && game.broadcastSound) {
                 if (this instanceof Hero) game.broadcastSound('kill', this.x, this.y);
@@ -232,8 +270,8 @@ class Entity {
 class Hero extends Entity {
     constructor(id, x, y, team, role) {
         super(id, x, y, HERO_RADIUS, team);
-        this.role = role; this.level = 1; this.xp = 0; this.xpToLevel = 100; this.gold = 0;
-        this.kills = 0; this.deaths = 0; this.mp = 100; this.maxMp = 100; this.mpRegen = 6;
+        this.role = role; this.level = 1; this.xp = 0; this.xpToLevel = calcExpNeeded(1); this.gold = 0;
+        this.kills = 0; this.deaths = 0; this.deathStreak = 0;
         this.faceAngle = team === TEAM_BLUE ? 0 : Math.PI;
         this.respawnTimer = 0; this.moveTarget = null;
         this.stunTimer = 0; this.shield = 0;
@@ -271,47 +309,64 @@ class Hero extends Entity {
         // 战后统计
         this.stats = { damageDealt: 0, damageTaken: 0, healing: 0, assists: 0 };
 
-        const configs = {
-            warrior: { name: '狂战士', hp: 2100, mp: 100, ad: 85, range: 120, speed: 1.1, ms: 360 },
-            mage: { name: '奥术师', hp: 1150, mp: 180, ad: 55, range: 450, speed: 1.0, ms: 350 },
-            archer: { name: '神射手', hp: 1250, mp: 110, ad: 70, range: 550, speed: 1.35, ms: 340 }
+        // 等级系统 - 技能加点
+        this.skillPoints = 0;
+        this.skillLevels = { Q: 0, W: 0, E: 0, R: 0 };
+
+        // 新基础属性（1级）— 按角色差异化
+        const baseConfigs = {
+            warrior: { name: '狂战士', hp: 800, mp: 300, ad: 60, ap: 20, pDef: 40, mDef: 30, range: 120, speed: 0.8, ms: 360, hpRegen: 25, mpRegen: 5 },
+            mage:    { name: '奥术师', hp: 550, mp: 450, ad: 45, ap: 70, pDef: 20, mDef: 25, range: 450, speed: 0.7, ms: 350, hpRegen: 18, mpRegen: 8 },
+            archer:  { name: '神射手', hp: 600, mp: 320, ad: 65, ap: 15, pDef: 25, mDef: 22, range: 550, speed: 0.9, ms: 340, hpRegen: 20, mpRegen: 6 }
         };
-        const cfg = configs[role] || configs.warrior;
+        // 每级成长
+        const growthConfigs = {
+            warrior: { hp: 180, mp: 30, ad: 12, ap: 4, pDef: 10, mDef: 8, hpRegen: 3, mpRegen: 1 },
+            mage:    { hp: 120, mp: 60, ad: 6,  ap: 16, pDef: 5,  mDef: 6, hpRegen: 2, mpRegen: 3 },
+            archer:  { hp: 130, mp: 35, ad: 14, ap: 3,  pDef: 6,  mDef: 5, hpRegen: 2, mpRegen: 1.5 }
+        };
+
+        const cfg = baseConfigs[role] || baseConfigs.warrior;
+        const grow = growthConfigs[role] || growthConfigs.warrior;
         this.heroName = cfg.name;
         this.maxHp = cfg.hp; this.hp = cfg.hp;
         this.maxMp = cfg.mp; this.mp = cfg.mp;
-        this.attackDamage = cfg.ad; this.attackRange = cfg.range; this.attackSpeed = cfg.speed; this.moveSpeed = cfg.ms;
+        this.attackDamage = cfg.ad; this.ap = cfg.ap;
+        this.pDef = cfg.pDef; this.mDef = cfg.mDef;
+        this.attackRange = cfg.range; this.attackSpeed = cfg.speed; this.moveSpeed = cfg.ms;
+        this.hpRegen = cfg.hpRegen; this.mpRegen = cfg.mpRegen;
+        this.growth = grow;
 
-        // 技能配置：按角色差异化
+        // 技能配置：按角色差异化 — 增加 baseDamage 和 damagePerLevel
         const skillConfigs = {
             warrior: {
-                q: { name: '破阵突刺', desc: '冲刺+破甲：命中英雄后下次普攻降防30%', cd: 0, maxCd: 6, range: 450, damage: 180, mpCost: 25 },
-                w: { name: '战意怒吼', desc: '范围伤害+减速30%+自身10%护盾', cd: 0, maxCd: 9, range: 300, damage: 150, mpCost: 35 },
-                e: { name: '闪避突进', desc: '向鼠标方向快速位移', cd: 0, maxCd: 10, range: 400, damage: 0, mpCost: 25 },
-                r: { name: '不动如山', desc: '3秒霸体，受击30%吸血', cd: 0, maxCd: 35, range: 0, damage: 0, mpCost: 80 }
+                q: { name: '破阵突刺', desc: '冲刺+破甲：命中英雄后下次普攻降防30%', cd: 0, maxCd: 6, range: 450, baseDamage: 120, dmgPerLv: 30, mpCost: 25 },
+                w: { name: '战意怒吼', desc: '范围伤害+减速30%+自身10%护盾', cd: 0, maxCd: 9, range: 300, baseDamage: 100, dmgPerLv: 25, mpCost: 35 },
+                e: { name: '闪避突进', desc: '向鼠标方向快速位移', cd: 0, maxCd: 10, range: 400, baseDamage: 0, dmgPerLv: 0, mpCost: 25 },
+                r: { name: '不动如山', desc: '3秒霸体，受击30%吸血', cd: 0, maxCd: 35, range: 0, baseDamage: 0, dmgPerLv: 0, mpCost: 80 }
             },
             mage: {
-                q: { name: '灵符飞掷', desc: '发射符咒，击杀返还50%蓝+刷新', cd: 0, maxCd: 5, range: 600, damage: 190, mpCost: 25 },
-                w: { name: '缚灵法阵', desc: '0.5秒延迟，伤害+定身1秒', cd: 0, maxCd: 8, range: 700, damage: 170, mpCost: 40 },
-                e: { name: '闪避突进', desc: '向鼠标方向快速位移', cd: 0, maxCd: 10, range: 400, damage: 0, mpCost: 25 },
-                r: { name: '万象天引', desc: '引导1秒后牵引敌人+爆发伤害', cd: 0, maxCd: 40, range: 450, damage: 220, mpCost: 90 }
+                q: { name: '灵符飞掷', desc: '发射符咒，击杀返还50%蓝+刷新', cd: 0, maxCd: 5, range: 600, baseDamage: 130, dmgPerLv: 30, mpCost: 25 },
+                w: { name: '缚灵法阵', desc: '0.5秒延迟，伤害+定身1秒', cd: 0, maxCd: 8, range: 700, baseDamage: 110, dmgPerLv: 30, mpCost: 40 },
+                e: { name: '闪避突进', desc: '向鼠标方向快速位移', cd: 0, maxCd: 10, range: 400, baseDamage: 0, dmgPerLv: 0, mpCost: 25 },
+                r: { name: '万象天引', desc: '引导1秒后牵引敌人+爆发伤害', cd: 0, maxCd: 40, range: 450, baseDamage: 150, dmgPerLv: 55, mpCost: 90 }
             },
             archer: {
-                q: { name: '穿云箭', desc: '蓄力0.5秒，穿透衰减(100%/80%/60%)', cd: 0, maxCd: 5, range: 800, damage: 160, mpCost: 25 },
-                w: { name: '后撤步', desc: '后跳+1秒隐匿：+30%移速免小兵仇恨', cd: 0, maxCd: 7, range: 300, damage: 0, mpCost: 30 },
-                e: { name: '闪避突进', desc: '向鼠标方向快速位移', cd: 0, maxCd: 10, range: 400, damage: 0, mpCost: 25 },
-                r: { name: '万箭齐发', desc: '引导3秒扇形持续射击，可手动取消', cd: 0, maxCd: 30, range: 450, damage: 50, mpCost: 80 }
+                q: { name: '穿云箭', desc: '蓄力0.5秒，穿透衰减(100%/80%/60%)', cd: 0, maxCd: 5, range: 800, baseDamage: 110, dmgPerLv: 25, mpCost: 25 },
+                w: { name: '后撤步', desc: '后跳+1秒隐匿：+30%移速免小兵仇恨', cd: 0, maxCd: 7, range: 300, baseDamage: 0, dmgPerLv: 0, mpCost: 30 },
+                e: { name: '闪避突进', desc: '向鼠标方向快速位移', cd: 0, maxCd: 10, range: 400, baseDamage: 0, dmgPerLv: 0, mpCost: 25 },
+                r: { name: '万箭齐发', desc: '引导3秒扇形持续射击，可手动取消', cd: 0, maxCd: 30, range: 450, baseDamage: 35, dmgPerLv: 10, mpCost: 80 }
             }
         };
         const sc = skillConfigs[role] || skillConfigs.warrior;
-        this.skillQ = Object.assign({}, sc.q);
-        this.skillW = Object.assign({}, sc.w);
-        this.skillE = Object.assign({}, sc.e);
-        this.skillR = Object.assign({}, sc.r);
+        this.skillQ = Object.assign({}, sc.q); this.skillQ.damage = sc.q.baseDamage; this.skillQ.maxLevel = SKILL_MAX_LEVEL.Q; this.skillQ.unlocked = true;
+        this.skillW = Object.assign({}, sc.w); this.skillW.damage = sc.w.baseDamage; this.skillW.maxLevel = SKILL_MAX_LEVEL.W; this.skillW.unlocked = false;
+        this.skillE = Object.assign({}, sc.e); this.skillE.damage = sc.e.baseDamage; this.skillE.maxLevel = SKILL_MAX_LEVEL.E; this.skillE.unlocked = false;
+        this.skillR = Object.assign({}, sc.r); this.skillR.damage = sc.r.baseDamage; this.skillR.maxLevel = SKILL_MAX_LEVEL.R; this.skillR.unlocked = false;
     }
 
     gainReward(target, game) {
-        // 补刀/击杀收益
+        if (this.level >= MAX_LEVEL) return; // 满级不获取经验
         let gold = target.goldValue || 0;
         let xp = target.xpValue || 0;
 
@@ -323,38 +378,125 @@ class Hero extends Entity {
             gold += 50;
         }
 
-        // 助攻奖励：附近友军获得少量金币经验
-        if (target instanceof Hero) {
-            for (const h of game.heroes) {
-                if (h.team === this.team && h !== this && !h.dead && dist(h, target) < 1200) {
-                    h.gold += 80; h.xp += 60;
-                }
-            }
-            this.kills++; target.deaths++;
-        }
-
-        // 团队金币分配：附近友军获得 50% 额外金币（系统发放，不扣除补刀者）
+        // === 经验值来源细分 ===
         if (target instanceof Minion) {
-            // 补刀加成 +30%
-            gold = Math.floor(gold * 1.3);
+            gold = Math.floor(gold * 1.3); // 补刀加成 +30%
+            // 新经验值：近战 40/炮车 60, 补刀者 100%, 附近友军 50%
+            let baseXp = 40;
+            if (target.minionType === 'cannon') baseXp = 60;
+            else if (target.isSuper) baseXp = 50;
+            xp = baseXp; // 补刀者 100%
             for (const h of game.heroes) {
                 if (h.team === this.team && h !== this && !h.dead && dist(h, target) < 800) {
                     h.gold += Math.floor(gold * 0.5);
+                    h._pendingXp = (h._pendingXp || 0) + Math.floor(baseXp * 0.5);
+                }
+            }
+        } else if (target instanceof Monster) {
+            // 野怪经验
+            let baseXp = target.xpValue || 35;
+            xp = baseXp;
+            for (const h of game.heroes) {
+                if (h.team === this.team && h !== this && !h.dead && dist(h, target) < 800) {
+                    h._pendingXp = (h._pendingXp || 0) + Math.floor(baseXp * 0.5);
+                }
+            }
+            // Boss 全队共享
+            if (target.type === 'dragon' || target.type === 'baron') {
+                const bossXp = target.type === 'dragon' ? 50 : 67;
+                for (const h of game.heroes) {
+                    if (h.team === this.team && !h.dead) {
+                        h._pendingXp = (h._pendingXp || 0) + bossXp;
+                    }
+                }
+            }
+        } else if (target instanceof Hero) {
+            // 击杀英雄：100 + 等级×20
+            const base = 100 + target.level * 20;
+            xp = Math.floor(base * 0.7); // 击杀者 70%
+            const assistXp = Math.floor(base * 0.3); // 助攻者均分
+            let assistants = [];
+            for (const h of game.heroes) {
+                if (h.team === this.team && h !== this && !h.dead && dist(h, target) < 1500) {
+                    assistants.push(h);
+                }
+            }
+            if (assistants.length > 0) {
+                const each = Math.floor(assistXp / assistants.length);
+                for (const h of assistants) {
+                    h.gold += 80; h._pendingXp = (h._pendingXp || 0) + each;
+                }
+            } else {
+                xp = base; // 无助攻，击杀者 100%
+            }
+            this.kills++; target.deaths++; this.deathStreak = 0;
+        } else if (target instanceof Tower) {
+            // 推塔经验：全队共享
+            let towerXp = target.tier === 'inner' ? 120 : (target.tier === 'crystal' ? 0 : 80);
+            xp = Math.floor(towerXp * 1.3); // 最后一击 +30%
+            for (const h of game.heroes) {
+                if (h.team === this.team && h !== this && !h.dead) {
+                    h._pendingXp = (h._pendingXp || 0) + towerXp;
                 }
             }
         }
 
+        // 连续死亡惩罚（经验获取递减）
+        if (target instanceof Hero) {
+            const penalty = Math.max(0.4, 1.0 - target.deathStreak * 0.2);
+            xp = Math.floor(xp * penalty);
+        }
+
+        // 经验追赶/领先修正
+        const modifier = getExpModifier(this, game);
+        xp = Math.floor(xp * modifier);
+
         this.gold += gold;
         this.xp += xp;
-        while (this.xp >= this.xpToLevel) this.levelUp();
+        while (this.xp >= this.xpToLevel && this.level < MAX_LEVEL) this.levelUp(game);
     }
 
-    levelUp() {
-        this.xp -= this.xpToLevel; this.level++;
-        this.xpToLevel = Math.floor(this.xpToLevel * 1.25);
-        this.maxHp += 130; this.hp += 130;
-        this.maxMp += 18; this.mp += 18;
-        this.attackDamage += 14;
+    levelUp(game) {
+        this.xp -= this.xpToLevel;
+        this.level++;
+        this.skillPoints++;
+        if (this.level < MAX_LEVEL) {
+            this.xpToLevel = calcExpNeeded(this.level);
+        } else {
+            this.xp = 0; this.xpToLevel = 0;
+        }
+
+        // 属性成长
+        const g = this.growth;
+        this.maxHp += g.hp; this.hp = Math.min(this.hp + g.hp, this.maxHp);
+        this.maxMp += g.mp; this.mp = Math.min(this.mp + g.mp, this.maxMp);
+        this.attackDamage += g.ad; this.ap += g.ap;
+        this.pDef += g.pDef; this.mDef += g.mDef;
+        this.hpRegen += g.hpRegen; this.mpRegen += g.mpRegen;
+
+        // 自动解锁技能
+        if (this.level >= 2 && !this.skillW.unlocked) { this.skillW.unlocked = true; this.skillLevels.W = 1; this.skillPoints--; this.skillW.damage = this.skillW.baseDamage + this.skillW.dmgPerLv; }
+        if (this.level >= 3) {
+            if (!this.skillE.unlocked) { this.skillE.unlocked = true; this.skillLevels.E = 1; this.skillPoints--; this.skillE.damage = this.skillE.baseDamage + this.skillE.dmgPerLv; }
+            if (!this.skillR.unlocked) { this.skillR.unlocked = true; this.skillLevels.R = 1; this.skillPoints--; this.skillR.damage = this.skillR.baseDamage + this.skillR.dmgPerLv; }
+        }
+
+        // 广播升级事件
+        if (game && game.broadcast) {
+            game.broadcast({ type: 'level_up', heroId: this.id, level: this.level, skillPoints: this.skillPoints, team: this.team });
+        }
+    }
+
+    upgradeSkill(slot) {
+        if (this.skillPoints <= 0) return false;
+        const s = slot.toUpperCase();
+        const skill = this['skill' + s];
+        if (!skill || !skill.unlocked) return false;
+        if (this.skillLevels[s] >= SKILL_MAX_LEVEL[s]) return false;
+        this.skillPoints--;
+        this.skillLevels[s]++;
+        skill.damage = skill.baseDamage + this.skillLevels[s] * skill.dmgPerLv;
+        return true;
     }
 
     update(dt, game) {
@@ -487,7 +629,7 @@ class Hero extends Entity {
                         while (diff > Math.PI) diff -= Math.PI * 2;
                         while (diff < -Math.PI) diff += Math.PI * 2;
                         if (Math.abs(diff) < coneHalfAngle) {
-                            let dmg = skill.damage + this.level * 8;
+                            let dmg = skill.damage;
                             if (this._dragonStacks >= 3) dmg = Math.floor(dmg * 1.3);
                             e.takeDamage(dmg, this, game);
                         }
@@ -503,7 +645,7 @@ class Hero extends Entity {
                     const enemies = [...game.heroes, ...game.minions, ...game.towers, ...game.monsters].filter(e => this.isEnemy(e));
                     for (const e of enemies) {
                         if (dist({ x: tx, y: ty }, e) < skill.range) {
-                            e.takeDamage(Math.floor((skill.damage + this.level * 40)), this, game);
+                            e.takeDamage(Math.floor((skill.damage)), this, game);
                         }
                     }
                     game.vortexEffects.push(new VortexEffect(game.nextId++, tx, ty, skill.range, 1.5, this));
@@ -533,6 +675,14 @@ class Hero extends Entity {
         }
 
         this.mp = Math.min(this.maxMp, this.mp + this.mpRegen * dt);
+        // 自然生命恢复
+        this.hp = Math.min(this.maxHp, this.hp + this.hpRegen * dt);
+        // 处理待处理的队友经验
+        if (this._pendingXp && this._pendingXp > 0) {
+            this.xp += this._pendingXp;
+            delete this._pendingXp;
+            while (this.xp >= this.xpToLevel && this.level < MAX_LEVEL) this.levelUp(game);
+        }
         if (this.attackCd > 0) this.attackCd -= dt;
         ['Q', 'W', 'E', 'R'].forEach(s => { const sk = this['skill' + s]; if (sk.cd > 0) sk.cd -= dt; });
 
@@ -584,7 +734,7 @@ class Hero extends Entity {
         this.cancelRecall();
         const skill = this['skill' + slot.toUpperCase()];
         if (!skill || skill.cd > 0 || this.mp < skill.mpCost) return false;
-        if (slot === 'r' && this.level < ULTIMATE_UNLOCK_LEVEL) return false;
+        if (slot === 'r' && !this.skillR.unlocked) return false;
 
         let angle = this.faceAngle;
         let tx = this.x + Math.cos(angle) * 300;
@@ -618,7 +768,7 @@ class Hero extends Entity {
                     const localX = dx * Math.cos(-dashAngle) - dy * Math.sin(-dashAngle);
                     const localY = dx * Math.sin(-dashAngle) + dy * Math.cos(-dashAngle);
                     if (Math.abs(localX) < rectLen / 2 + e.radius && Math.abs(localY) < rectHalfW + e.radius) {
-                        e.takeDamage(Math.floor((skill.damage + this.level * 22) * damageMul), this, game);
+                        e.takeDamage(Math.floor(skill.damage * damageMul), this, game);
                         if (e instanceof Hero) hitHero = true;
                     }
                 }
@@ -629,7 +779,7 @@ class Hero extends Entity {
                 // 战意怒吼：AOE + 减速 + 护盾
                 for (const e of enemies) {
                     if (dist(this, e) < skill.range) {
-                        e.takeDamage(Math.floor((skill.damage + this.level * 25) * damageMul), this, game);
+                        e.takeDamage(Math.floor(skill.damage * damageMul), this, game);
                         if (e instanceof Hero) { e.slowTimer = 2; e.slowFactor = 0.7; }
                     }
                 }
@@ -655,14 +805,14 @@ class Hero extends Entity {
         else if (this.role === 'mage') {
             if (slot === 'q') {
                 const proj = new Projectile(game.nextId++, this.x, this.y, null, this.team, 'q',
-                    Math.floor((skill.damage + this.level * 22) * damageMul), Math.cos(angle) * 650, Math.sin(angle) * 650, 1.5, 25, this);
+                    Math.floor(skill.damage * damageMul), Math.cos(angle) * 650, Math.sin(angle) * 650, 1.5, 25, this);
                 proj.skillSlot = 'q'; // 标记技能槽，用于击杀刷新判断
                 game.projectiles.push(proj);
                 game.addEffect('mage_q_trail', this.x, this.y, 20, 0.15);
             } else if (slot === 'w') {
                 // 缚灵法阵：延迟 AOE + 定身
                 const de = new DelayedEffect(game.nextId++, tx, ty, skill.range, 0.5,
-                    Math.floor((skill.damage + this.level * 28) * damageMul), this, game);
+                    Math.floor(skill.damage * damageMul), this, game);
                 de.rootTargets = true; // 标记需要定身
                 game.delayedEffects.push(de);
             } else if (slot === 'e') {
@@ -691,7 +841,7 @@ class Hero extends Entity {
                 // 穿云箭：蓄力 0.5 秒后发射
                 this.charging = true;
                 this.chargeTimer = 0.5;
-                this._chargeDamage = Math.floor((skill.damage + this.level * 20) * damageMul);
+                this._chargeDamage = Math.floor(skill.damage * damageMul);
                 this._chargeAngle = angle;
                 game.addEffect('charge_indicator', this.x, this.y, HERO_RADIUS + 20, 0.5);
             } else if (slot === 'w') {
@@ -793,13 +943,13 @@ class Minion extends Entity {
         // 基础属性
         if (type === 'cannon') {
             this.baseHp = isSuper ? 1620 : 900; this.baseAtk = isSuper ? 195 : 130;
-            this.attackSpeed = 0.5; this.moveSpeed = 110; this.attackRange = 450;
+            this.attackSpeed = 0.5; this.moveSpeed = 220; this.attackRange = 450;
             this.goldValue = 120; this.xpValue = 55;
             this.surviveTimer = 0;
             this.berserk = false;
         } else {
             this.baseHp = 550; this.baseAtk = 45;
-            this.attackSpeed = 1.0; this.moveSpeed = 120; this.attackRange = 120;
+            this.attackSpeed = 1.0; this.moveSpeed = 240; this.attackRange = 120;
             this.goldValue = 65; this.xpValue = 30;
         }
         // 随时间成长（每3分钟+一次）
@@ -859,8 +1009,8 @@ class Minion extends Entity {
                 if (dist(h, ally) < h.attackRange + 50 && dist(this, h) < 800) return h;
             }
         }
-        // 2. 敌方小兵
-        let mTarget = this.findTarget(this.attackRange + 40, game);
+        // 2. 敌方小兵（大范围检测）
+        let mTarget = this.findTarget(this.attackRange + 500, game);
         if (mTarget && mTarget instanceof Minion) return mTarget;
         // 3. 敌方塔
         for (const t of game.towers) {
@@ -1012,6 +1162,19 @@ class Tower extends Entity {
         }
     }
 
+    findTowerTarget(game) {
+        let best = null, bestScore = -Infinity;
+        const candidates = [...game.heroes, ...game.minions].filter(e => this.isEnemy(e) && dist(this, e) <= this.attackRange);
+        for (const e of candidates) {
+            let score = 0;
+            if (e instanceof Minion) score += 500;
+            else if (e instanceof Hero) score += 100;
+            score -= dist(this, e) * 0.1;
+            if (score > bestScore) { bestScore = score; best = e; }
+        }
+        return best;
+    }
+
     update(dt, game) {
         if (this.dead) return;
 
@@ -1032,7 +1195,7 @@ class Tower extends Entity {
             }
         }
 
-        const target = this.findTarget(this.attackRange, game);
+        const target = this.findTowerTarget(game);
         if (target && this.attackCd <= 0) {
             // 伤害递增：切换目标重置
             if (target !== this.lastTarget) { this.damageStack = 0; this.lastTarget = target; }
@@ -1543,8 +1706,12 @@ class Game {
         if (!hero) return;
 
         // 调试命令：任何状态都可执行
+        if (action.type === 'upgrade_skill' && hero) {
+            hero.upgradeSkill(action.slot);
+            return;
+        }
         if (action.type === 'dev_levelup' && hero) {
-            hero.levelUp(); hero.xp = 0; return;
+            hero.xp = hero.xpToLevel; hero.levelUp(this); return;
         }
         if (action.type === 'dev_gold' && hero) {
             hero.gold += 1000; return;
@@ -1660,7 +1827,7 @@ class Game {
             // 随机放技能
             for (const slot of ['q', 'w', 'e', 'r']) {
                 const skill = bot['skill' + slot.toUpperCase()];
-                if (skill.cd <= 0 && bot.mp >= skill.mpCost && !(slot === 'r' && bot.level < ULTIMATE_UNLOCK_LEVEL) && minD < skill.range + 50 && Math.random() < 0.02) {
+                if (skill.cd <= 0 && bot.mp >= skill.mpCost && !(slot === 'r' && !bot.skillR.unlocked) && minD < skill.range + 50 && Math.random() < 0.02) {
                     bot.castSkill(slot, target, this);
                     break;
                 }
@@ -1822,7 +1989,7 @@ const server = http.createServer((req, res) => {
     if (req.url === '/map.json') {
         fs.readFile(path.join(__dirname, 'map.json'), (err, data) => {
             if (err) { res.writeHead(404); res.end('Not found'); }
-            else { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(data); }
+            else { res.writeHead(200, { 'Content-Type': 'application/json', 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }); res.end(data); }
         });
         return;
     }
@@ -1838,7 +2005,7 @@ const server = http.createServer((req, res) => {
 
     fs.readFile(filePath, (err, data) => {
         if (err) { res.writeHead(404); res.end('Not found'); }
-        else { res.writeHead(200, { 'Content-Type': contentType }); res.end(data); }
+        else { res.writeHead(200, { 'Content-Type': contentType, 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' }); res.end(data); }
     });
 });
 
