@@ -48,6 +48,11 @@ function getAtkSpeedMult(bonus) {
     return mult;
 }
 
+// 野怪普攻伤害上限
+const JUNGLE_DMG_CAP = { small: 200, buff: 300, dragon: 400, baron: 500 };
+// 对建筑系数
+const BUILDING_RATIO = { warrior: 1.20, mage: 0.70, archer: 1.00 };
+
 // 升级所需经验公式
 function calcExpNeeded(level) {
     return 100 + (level - 1) * 150 + Math.max(0, level - 5) * 100;
@@ -758,7 +763,8 @@ class Hero extends Entity {
                 this._dealAttackDamage(this.atkTarget, game);
                 this.atkPhase = 'recovery';
                 const speedMult = getAtkSpeedMult(this.atkSpeedBonus);
-                this.atkTimer = this.recoveryTime / Math.max(1 + this.atkSpeedBonus, 1.0) * speedMult;
+                const towerMult = this.atkTarget instanceof Tower ? 1.2 : 1.0;
+                this.atkTimer = this.recoveryTime / Math.max(1 + this.atkSpeedBonus, 1.0) * speedMult * towerMult;
             }
         } else if (this.atkPhase === 'recovery') {
             this.atkTimer -= dt;
@@ -813,11 +819,24 @@ class Hero extends Entity {
     // ============ 攻击系统 ============
 
     // 伤害计算：物理/法术/暴击/穿透
-    _calculateAttackDamage(target) {
+    _calculateAttackDamage(target, game) {
         let base = 20; // 普攻基础伤害
-        let adPart = this.attackDamage;
 
-        // 暴击判定（仅AD部分暴击）
+        // ===== 对塔伤害 =====
+        if (target instanceof Tower) {
+            let dmg = this.attackDamage * (BUILDING_RATIO[this.role] || 1.0);
+            // 前期保护（前4分钟）
+            if (game && game.time < 240) dmg *= 0.5;
+            // 无兵减伤
+            if (game && !game.hasFriendlyMinionInRange(target, this.team)) dmg *= 0.1;
+            // 塔防御（穿透无效）
+            const towerDef = target.tier === 'crystal' ? 400 : (target.tier === 'inner' ? 300 : 200);
+            dmg = Math.floor(dmg * (1 - towerDef / (towerDef + 600)));
+            return { dmg: Math.max(1, dmg), isCrit: false, dmgType: 'phys', isPhys: true };
+        }
+
+        // ===== 对野怪/英雄 =====
+        let adPart = this.attackDamage;
         let isCrit = Math.random() < this.critRate;
         if (isCrit) adPart = Math.floor(adPart * this.critEffect);
 
@@ -844,13 +863,21 @@ class Hero extends Entity {
         // 英雄特殊被动
         if (this.role === 'warrior') {
             dmg += Math.floor(this.maxHp * 0.05);
-            if (target instanceof Tower) dmg = Math.floor(dmg * 1.2);
         }
         if (this.role === 'archer' && target.id === this.focusTarget) {
             dmg = Math.floor(dmg * (1 + this.focusStacks * 0.05));
         }
 
-        // 等级压制
+        // 野怪伤害上限
+        if (target instanceof Monster) {
+            let cap = JUNGLE_DMG_CAP.small;
+            if (target.type === 'dragon') cap = JUNGLE_DMG_CAP.dragon;
+            else if (target.type === 'baron') cap = JUNGLE_DMG_CAP.baron;
+            else if (target.type === 'buff') cap = JUNGLE_DMG_CAP.buff;
+            dmg = Math.min(dmg, cap);
+        }
+
+        // 等级压制（仅对英雄）
         if (target instanceof Hero) {
             dmg = Math.floor(dmg * getLevelSuppressionMul(this, target));
         }
@@ -861,12 +888,14 @@ class Hero extends Entity {
     // 攻击命中处理
     _dealAttackDamage(target, game) {
         if (!target || target.dead) return;
-        const { dmg, isCrit, dmgType } = this._calculateAttackDamage(target);
+        const { dmg, isCrit, dmgType } = this._calculateAttackDamage(target, game);
         target.takeDamage(dmg, this, game);
 
-        // 吸血（物理吸血，对塔不吸血）
+        // 吸血 — 对塔不吸血，对野怪×1.5
         if (!(target instanceof Tower) && this.physVamp > 0) {
-            const heal = Math.floor(dmg * this.physVamp);
+            let vampMult = 1.0;
+            if (target instanceof Monster) vampMult = 1.5;
+            const heal = Math.floor(dmg * this.physVamp * vampMult);
             if (heal > 0) {
                 this.hp = Math.min(this.maxHp, this.hp + heal);
                 this.stats.healing += heal;
@@ -876,20 +905,24 @@ class Hero extends Entity {
 
         // 攻击计数与被动
         this.atkCounter++;
+        const isTower = target instanceof Tower;
         if (this.role === 'warrior' && this.atkCounter >= 3) {
             this.atkCounter = 0;
-            if (target instanceof Hero) target.stunTimer = 0.3;
+            if (!isTower && target instanceof Hero) target.stunTimer = 0.3;
+            else if (target instanceof Monster) target.stunTimer = Math.max(target.stunTimer || 0, 0.15);
         }
         if (this.role === 'mage' && this.atkCounter >= 4) {
             this.atkCounter = 0;
-            // 小型AOE
-            for (const e of [...game.heroes, ...game.minions]) {
-                if (this.isEnemy(e) && dist(target, e) < 150) {
-                    e.takeDamage(Math.floor(this.ap * 0.3), this, game);
+            if (!isTower) {
+                const aoeMult = (target instanceof Monster) ? 0.5 : 1;
+                for (const e of [...game.heroes, ...game.minions]) {
+                    if (this.isEnemy(e) && dist(target, e) < 150) {
+                        e.takeDamage(Math.floor(this.ap * 0.3 * aoeMult), this, game);
+                    }
                 }
             }
         }
-        if (this.role === 'archer') {
+        if (this.role === 'archer' && !isTower) {
             if (target.id === this.focusTarget) {
                 this.focusStacks = Math.min(5, this.focusStacks + 1);
             } else {
@@ -1109,7 +1142,8 @@ class Hero extends Entity {
         this.atkPhase = 'windup';
         this.atkTarget = target;
         const speedMult = getAtkSpeedMult(this.atkSpeedBonus);
-        this.atkTimer = this.windupTime / Math.max(1 + this.atkSpeedBonus, 1.0) * speedMult;
+        const towerMult = target instanceof Tower ? 1.2 : 1.0;
+        this.atkTimer = this.windupTime / Math.max(1 + this.atkSpeedBonus, 1.0) * speedMult * towerMult;
 
         // 远程：进入 windup 后，发射弹道（弹道在命中时判定伤害）
         // 伤害计算由 _dealAttackDamage 处理
@@ -1846,6 +1880,15 @@ class Game {
         return f ? { x: f.x, y: f.y } : { x: MAP_WIDTH / 2, y: MAP_HEIGHT / 2 };
     }
 
+    // 检测塔攻击范围内是否有己方小兵
+    hasFriendlyMinionInRange(tower, attackerTeam) {
+        for (const m of this.minions) {
+            if (m.dead || m.team !== attackerTeam) continue;
+            if (dist(m, tower) < tower.attackRange + 50) return true;
+        }
+        return false;
+    }
+
     canSee(viewer, target) {
         if (!(target instanceof Hero)) return true;
         const targetInBush = this.isInBush(target.x, target.y);
@@ -2213,13 +2256,37 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    let filePath = path.join(__dirname, '../client', req.url === '/' ? 'index.html' : req.url);
+    // Route: /client3d or /3d -> client3d/index.html
+    // Route: /client3d/... -> client3d/...
+    // Route: /client/... -> client/...  
+    // Default: / -> client/index.html
+    let url = req.url;
+    let baseDir;
+    if (url === '/client3d' || url === '/client3d/' || url === '/3d') {
+        url = '/index.html';
+        baseDir = path.join(__dirname, '../client3d');
+    } else if (url.startsWith('/client3d/')) {
+        url = url.slice('/client3d'.length);
+        baseDir = path.join(__dirname, '../client3d');
+    } else if (url.startsWith('/client/')) {
+        url = url.slice('/client'.length);
+        baseDir = path.join(__dirname, '../client');
+    } else {
+        if (url === '/') url = '/index.html';
+        baseDir = path.join(__dirname, '../client');
+    }
+
+    const filePath = path.join(baseDir, url);
     const ext = path.extname(filePath);
     const contentType = {
         '.html': 'text/html',
         '.js': 'application/javascript',
         '.css': 'text/css',
-        '.json': 'application/json'
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.wasm': 'application/wasm',
+        '.pck': 'application/octet-stream'
     }[ext] || 'application/octet-stream';
 
     fs.readFile(filePath, (err, data) => {
