@@ -29,6 +29,25 @@ const ULTIMATE_UNLOCK_LEVEL = 3;
 const MAX_LEVEL = 12;
 const SKILL_MAX_LEVEL = { Q: 4, W: 4, E: 4, R: 3 };
 
+// 攻速阈值表（8档）
+const ATK_SPEED_TIERS = [
+    { threshold: 0,    mult: 1.00 },
+    { threshold: 0.15, mult: 0.92 },
+    { threshold: 0.35, mult: 0.85 },
+    { threshold: 0.55, mult: 0.78 },
+    { threshold: 0.80, mult: 0.70 },
+    { threshold: 1.10, mult: 0.62 },
+    { threshold: 1.40, mult: 0.55 },
+    { threshold: 1.80, mult: 0.48 },
+];
+function getAtkSpeedMult(bonus) {
+    let mult = 1.00;
+    for (const t of ATK_SPEED_TIERS) {
+        if (bonus >= t.threshold) mult = t.mult;
+    }
+    return mult;
+}
+
 // 升级所需经验公式
 function calcExpNeeded(level) {
     return 100 + (level - 1) * 150 + Math.max(0, level - 5) * 100;
@@ -112,6 +131,9 @@ function serializeState(game) {
             skillPoints: h.skillPoints,
             skillLevels: { Q: h.skillLevels.Q, W: h.skillLevels.W, E: h.skillLevels.E, R: h.skillLevels.R },
             ap: h.ap, pDef: h.pDef, mDef: h.mDef,
+            atkPhase: h.atkPhase, atkTimer: Math.round(h.atkTimer * 100) / 100,
+            critRate: Math.round(h.critRate * 100) / 100, atkSpeedBonus: Math.round(h.atkSpeedBonus * 100) / 100,
+            focusStacks: h.focusStacks,
             faceAngle: Math.round(h.faceAngle * 100) / 100,
             dead: h.dead, respawnTimer: Math.round(h.respawnTimer * 10) / 10,
             kills: h.kills, deaths: h.deaths, gold: h.gold,
@@ -363,6 +385,40 @@ class Hero extends Entity {
         this.skillW = Object.assign({}, sc.w); this.skillW.damage = sc.w.baseDamage; this.skillW.maxLevel = SKILL_MAX_LEVEL.W; this.skillW.unlocked = false;
         this.skillE = Object.assign({}, sc.e); this.skillE.damage = sc.e.baseDamage; this.skillE.maxLevel = SKILL_MAX_LEVEL.E; this.skillE.unlocked = false;
         this.skillR = Object.assign({}, sc.r); this.skillR.damage = sc.r.baseDamage; this.skillR.maxLevel = SKILL_MAX_LEVEL.R; this.skillR.unlocked = false;
+
+        // 攻击系统 — 三段式攻击动作
+        this.atkPhase = 'idle';       // idle / windup / recovery
+        this.atkTimer = 0;            // 当前阶段剩余时间
+        this.atkTarget = null;        // 当前攻击目标
+        this.atkCounter = 0;          // 攻击计数（英雄被动用）
+        const windups = { warrior: 0.25, mage: 0.30, archer: 0.20 };
+        const recovers = { warrior: 0.35, mage: 0.30, archer: 0.25 };
+        this.windupTime = windups[role] || 0.25;
+        this.recoveryTime = recovers[role] || 0.35;
+
+        // 攻速加成
+        this.atkSpeedBonus = 0;       // 装备/Buff累计加成
+        const growths = { warrior: 0.02, mage: 0.015, archer: 0.03 };
+        this.atkSpeedGrowth = growths[role] || 0.02;
+
+        // 暴击系统
+        const critRates = { warrior: 0, mage: 0, archer: 0.05 };
+        const critGrows = { warrior: 0.005, mage: 0, archer: 0.01 };
+        this.critRate = critRates[role] || 0;
+        this.critEffect = 1.8;
+        this.critGrowth = critGrows[role] || 0;
+
+        // 吸血
+        this.physVamp = 0;
+        this.spellVamp = 0;
+
+        // 神射手专注叠层
+        this.focusTarget = -1;
+        this.focusStacks = 0;
+
+        // 穿透
+        this.flatPen = 0;
+        this.percentPen = 0;
     }
 
     gainReward(target, game) {
@@ -473,6 +529,8 @@ class Hero extends Entity {
         this.attackDamage += g.ad; this.ap += g.ap;
         this.pDef += g.pDef; this.mDef += g.mDef;
         this.hpRegen += g.hpRegen; this.mpRegen += g.mpRegen;
+        this.atkSpeedBonus += this.atkSpeedGrowth;
+        this.critRate += this.critGrowth;
 
         // 自动解锁技能
         if (this.level >= 2 && !this.skillW.unlocked) { this.skillW.unlocked = true; this.skillLevels.W = 1; this.skillPoints--; this.skillW.damage = this.skillW.baseDamage + this.skillW.dmgPerLv; }
@@ -683,7 +741,6 @@ class Hero extends Entity {
             delete this._pendingXp;
             while (this.xp >= this.xpToLevel && this.level < MAX_LEVEL) this.levelUp(game);
         }
-        if (this.attackCd > 0) this.attackCd -= dt;
         ['Q', 'W', 'E', 'R'].forEach(s => { const sk = this['skill' + s]; if (sk.cd > 0) sk.cd -= dt; });
 
         // 静止计时：用于草丛完全隐身
@@ -693,7 +750,33 @@ class Hero extends Entity {
             this.stillTimer = 0;
         }
 
+        // 攻击阶段处理
+        if (this.atkPhase === 'windup') {
+            this.atkTimer -= dt;
+            if (this.atkTimer <= 0) {
+                // 命中阶段：造成伤害
+                this._dealAttackDamage(this.atkTarget, game);
+                this.atkPhase = 'recovery';
+                const speedMult = getAtkSpeedMult(this.atkSpeedBonus);
+                this.atkTimer = this.recoveryTime / Math.max(1 + this.atkSpeedBonus, 1.0) * speedMult;
+            }
+        } else if (this.atkPhase === 'recovery') {
+            this.atkTimer -= dt;
+            if (this.atkTimer <= 0) {
+                this.atkPhase = 'idle';
+                this.atkTarget = null;
+            }
+            // 移动或技能取消后摇
+            if (this.moveTarget) {
+                this.atkPhase = 'idle';
+                this.atkTarget = null;
+            }
+        }
+
         if (this.stunTimer <= 0 && !this.channeling && !this.rooted && this.moveTarget) {
+            // windup 期间不能移动
+            if (this.atkPhase === 'windup') { /* 阻止移动 */ }
+            else {
             const d = dist(this, this.moveTarget);
             if (d < 10) this.moveTarget = null;
             else {
@@ -709,6 +792,7 @@ class Hero extends Entity {
                 this.x = resolved.x;
                 this.y = resolved.y;
             }
+            } // end else (can move during windup=false)
         }
     }
 
@@ -724,6 +808,105 @@ class Hero extends Entity {
         this.isRecalling = true;
         this.recallTimer = 0;
         return true;
+    }
+
+    // ============ 攻击系统 ============
+
+    // 伤害计算：物理/法术/暴击/穿透
+    _calculateAttackDamage(target) {
+        let base = 20; // 普攻基础伤害
+        let adPart = this.attackDamage;
+
+        // 暴击判定（仅AD部分暴击）
+        let isCrit = Math.random() < this.critRate;
+        if (isCrit) adPart = Math.floor(adPart * this.critEffect);
+
+        let raw = base + adPart;
+        let dmgType = isCrit ? 'crit' : 'phys';
+        let isPhys = true;
+
+        // 奥术师：普攻为法术伤害
+        if (this.role === 'mage') {
+            isPhys = false;
+            raw = base + Math.floor(this.attackDamage + this.ap * 0.2);
+            dmgType = 'magic';
+        }
+
+        // 防御穿透
+        let def = isPhys ? (target.pDef || 0) : (target.mDef || 0);
+        def = Math.max(0, def - this.flatPen);
+        def = def * (1 - this.percentPen);
+
+        // 减伤公式
+        let reduction = def / (def + 600);
+        let dmg = Math.floor(raw * (1 - reduction));
+
+        // 英雄特殊被动
+        if (this.role === 'warrior') {
+            dmg += Math.floor(this.maxHp * 0.05);
+            if (target instanceof Tower) dmg = Math.floor(dmg * 1.2);
+        }
+        if (this.role === 'archer' && target.id === this.focusTarget) {
+            dmg = Math.floor(dmg * (1 + this.focusStacks * 0.05));
+        }
+
+        // 等级压制
+        if (target instanceof Hero) {
+            dmg = Math.floor(dmg * getLevelSuppressionMul(this, target));
+        }
+
+        return { dmg, isCrit, dmgType, isPhys };
+    }
+
+    // 攻击命中处理
+    _dealAttackDamage(target, game) {
+        if (!target || target.dead) return;
+        const { dmg, isCrit, dmgType } = this._calculateAttackDamage(target);
+        target.takeDamage(dmg, this, game);
+
+        // 吸血（物理吸血，对塔不吸血）
+        if (!(target instanceof Tower) && this.physVamp > 0) {
+            const heal = Math.floor(dmg * this.physVamp);
+            if (heal > 0) {
+                this.hp = Math.min(this.maxHp, this.hp + heal);
+                this.stats.healing += heal;
+                if (game && game.broadcast) game.broadcast({ type: 'heal', x: this.x, y: this.y, amount: heal });
+            }
+        }
+
+        // 攻击计数与被动
+        this.atkCounter++;
+        if (this.role === 'warrior' && this.atkCounter >= 3) {
+            this.atkCounter = 0;
+            if (target instanceof Hero) target.stunTimer = 0.3;
+        }
+        if (this.role === 'mage' && this.atkCounter >= 4) {
+            this.atkCounter = 0;
+            // 小型AOE
+            for (const e of [...game.heroes, ...game.minions]) {
+                if (this.isEnemy(e) && dist(target, e) < 150) {
+                    e.takeDamage(Math.floor(this.ap * 0.3), this, game);
+                }
+            }
+        }
+        if (this.role === 'archer') {
+            if (target.id === this.focusTarget) {
+                this.focusStacks = Math.min(5, this.focusStacks + 1);
+            } else {
+                this.focusTarget = target.id;
+                this.focusStacks = 1;
+            }
+            if (isCrit) this.stealthTimer = Math.max(this.stealthTimer || 0, 1);
+        }
+
+        // 破甲触发
+        if (this.armorBreakReady && this.role === 'warrior' && target instanceof Hero) {
+            target.armorReduced = 3;
+            this.armorBreakReady = false;
+            game.addEffect('armor_break', target.x, target.y, target.radius + 15, 3);
+        }
+
+        if (game && game.broadcastSound) game.broadcastSound('hit', target.x, target.y, { sourceRole: this.role, isCrit });
     }
 
     castSkill(slot, target, game) {
@@ -897,39 +1080,82 @@ class Hero extends Entity {
     }
 
     basicAttack(target, game) {
-        if (this.dead || this.stunTimer > 0 || this.attackCd > 0) return false;
-        this.cancelRecall();
+        if (this.dead || this.stunTimer > 0) return false;
+        // 只能在 idle 或 recovery 阶段发起攻击（recovery 可取消）
+        if (this.atkPhase === 'windup') return false;
         if (!target || target.dead || dist(this, target) > this.attackRange) return false;
+        this.cancelRecall();
         this.faceAngle = angleTo(this, target);
 
-        // 如果普攻敌方英雄，触发附近敌方小兵仇恨
+        // 取消后摇（走A）
+        this.atkPhase = 'idle';
+
+        // 小兵仇恨（攻击英雄时触发）
         if (target instanceof Hero) {
-            // 破甲触发：狂战士 Q 命中后，下次普攻附加破甲
-            if (this.armorBreakReady && this.role === 'warrior') {
-                target.armorReduced = 3; // 3 秒破甲
-                this.armorBreakReady = false;
-                game.addEffect('armor_break', target.x, target.y, target.radius + 15, 3);
-            }
             for (const m of game.minions) {
-                // 隐匿英雄不触发小兵仇恨
                 if (m.team === target.team && dist(m, target) < 500 && !m.dead && this.stealthTimer <= 0) {
                     m.setAggro(this);
                 }
             }
         }
-        let dmg = this.attackDamage;
-        if (this._dragonStacks >= 3) dmg = Math.floor(dmg * 1.3);
-        if (this._dragonStacks >= 2 && target instanceof Tower) dmg = Math.floor(dmg * 1.3);
-        if (this.buffBaronTimer > 0 && target instanceof Tower) dmg = Math.floor(dmg * 1.5);
 
-        if (this.role === 'mage' || this.role === 'archer') {
-            game.projectiles.push(new Projectile(game.nextId++, this.x, this.y, target, this.team, 'auto', dmg, 0, 0, 99, 18, this));
-        } else {
-            game.broadcastSound('hit', target.x, target.y, { sourceRole: this.role });
-            target.takeDamage(dmg, this, game);
-        }
-        this.attackCd = 1 / this.attackSpeed;
+        // 龙魂/Buff 加成
+        let dmgMul = 1;
+        if (this._dragonStacks >= 3) dmgMul = 1.3;
+        if (this.buffBaronTimer > 0 && target instanceof Tower) dmgMul *= 1.5;
+        if (this._dragonStacks >= 2 && target instanceof Tower) dmgMul *= 1.3;
+
+        // 开始攻击前摇
+        this.atkPhase = 'windup';
+        this.atkTarget = target;
+        const speedMult = getAtkSpeedMult(this.atkSpeedBonus);
+        this.atkTimer = this.windupTime / Math.max(1 + this.atkSpeedBonus, 1.0) * speedMult;
+
+        // 远程：进入 windup 后，发射弹道（弹道在命中时判定伤害）
+        // 伤害计算由 _dealAttackDamage 处理
         return true;
+    }
+
+    // 攻击目标自动选择
+    findAttackTarget(game) {
+        const enemies = [...game.heroes, ...game.minions].filter(e => this.isEnemy(e));
+        // 1. 正在攻击己方队友的敌方英雄
+        for (const e of enemies) {
+            if (!(e instanceof Hero)) continue;
+            for (const ally of game.heroes) {
+                if (ally.team === this.team && ally !== this && !ally.dead && dist(e, ally) < e.attackRange + 50) {
+                    if (dist(this, e) < this.attackRange) return e;
+                }
+            }
+        }
+        // 2. 血量最低的敌方英雄
+        let best = null, bestHp = Infinity;
+        for (const e of enemies) {
+            if (!(e instanceof Hero)) continue;
+            if (dist(this, e) < this.attackRange && e.hp < bestHp) { best = e; bestHp = e.hp; }
+        }
+        if (best) return best;
+        // 3. 最近的敌方小兵
+        let minD = Infinity;
+        for (const e of enemies) {
+            if (!(e instanceof Minion)) continue;
+            const d = dist(this, e);
+            if (d < this.attackRange && d < minD) { best = e; minD = d; }
+        }
+        if (best) return best;
+        // 4. 最近的敌方英雄
+        minD = Infinity;
+        for (const e of enemies) {
+            if (!(e instanceof Hero)) continue;
+            const d = dist(this, e);
+            if (d < this.attackRange + 200 && d < minD) { best = e; minD = d; }
+        }
+        // 5. 最近的塔
+        for (const t of game.towers) {
+            if (t.dead || t.team === this.team) continue;
+            if (dist(this, t) < this.attackRange + 100) return t;
+        }
+        return best;
     }
 }
 
@@ -1785,8 +2011,6 @@ class Game {
     addEffect(type, x, y, radius, life) { this.effects.push(new Effect(this.nextId++, type, x, y, radius, life)); }
 
     updateBotAI(bot, dt) {
-        bot.attackCd -= dt;
-        if (bot.attackCd < 0) bot.attackCd = 0;
         ['Q', 'W', 'E', 'R'].forEach(s => { const sk = bot['skill' + s]; if (sk.cd > 0) sk.cd -= dt; });
 
         // 血量低回城
@@ -1815,14 +2039,8 @@ class Game {
                 bot.y = resolved.y;
                 bot.cancelRecall();
             }
-            if (minD <= bot.attackRange + 30 && bot.attackCd <= 0) {
-                if (bot.role === 'mage' || bot.role === 'archer') {
-                    this.projectiles.push(new Projectile(this.nextId++, bot.x, bot.y, target, bot.team, 'auto', bot.attackDamage, 0, 0, 99, 18, bot));
-                } else {
-                    this.broadcastSound('hit', target.x, target.y, { sourceRole: bot.role });
-                    target.takeDamage(bot.attackDamage, bot, this);
-                }
-                bot.attackCd = 1 / bot.attackSpeed;
+            if (minD <= bot.attackRange + 30 && bot.atkPhase === 'idle') {
+                bot.basicAttack(target, this);
             }
             // 随机放技能
             for (const slot of ['q', 'w', 'e', 'r']) {
