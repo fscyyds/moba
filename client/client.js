@@ -664,7 +664,8 @@ function basicAttack() {
     const me = getMyHero();
     if (!me || me.dead) return;
     const target = findTargetUnderMouse(getMouseWorld());
-    if (target) ws.send(JSON.stringify({ type: 'attack', targetId: target.id }));
+    // 有目标发目标ID，没目标发-1让服务器自动选择最近敌人
+    ws.send(JSON.stringify({ type: 'attack', targetId: target ? target.id : -1 }));
 }
 
 // WASD 持续移动驱动

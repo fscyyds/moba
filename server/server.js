@@ -1977,7 +1977,8 @@ class Game {
         if (action.type === 'move') {
             hero.moveTarget = { x: clamp(action.x, 0, MAP_WIDTH), y: clamp(action.y, 0, MAP_HEIGHT) };
         } else if (action.type === 'attack') {
-            const target = this.findEntityById(action.targetId);
+            let target = this.findEntityById(action.targetId);
+            if (!target) target = hero.findAttackTarget(this);
             if (target) hero.basicAttack(target, this);
         } else if (action.type === 'skill') {
             const target = action.targetId ? this.findEntityById(action.targetId) : { x: action.x, y: action.y };
