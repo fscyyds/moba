@@ -151,6 +151,7 @@ function serializeState(game) {
             armorReduced: h.armorReduced > 0,
             rooted: h.rooted,
             stealthTimer: Math.round(h.stealthTimer * 10) / 10,
+            visionResidue: Math.round(h.visionResidue * 10) / 10,
             charging: h.charging,
             hitFlash: h.hitFlashTimer > 0,
             buffs: {
@@ -332,6 +333,7 @@ class Hero extends Entity {
         this.charging = false;          // 蓄力中（神射手 Q）
         this.chargeTimer = 0;           // 蓄力计时
         this.stillTimer = 0;            // 静止计时（草丛完全隐身）
+        this.visionResidue = 0;        // 攻击暴露残留（秒）
 
         // 战后统计
         this.stats = { damageDealt: 0, damageTaken: 0, healing: 0, assists: 0 };
@@ -660,6 +662,7 @@ class Hero extends Entity {
         if (this.rootTimer > 0) { this.rootTimer -= dt; if (this.rootTimer <= 0) this.rooted = false; }
         // 隐匿计时
         if (this.stealthTimer > 0) this.stealthTimer -= dt;
+        if (this.visionResidue > 0) this.visionResidue -= dt;
 
         // 蓄力计时（神射手 Q）
         if (this.charging) {
@@ -890,6 +893,9 @@ class Hero extends Entity {
         if (!target || target.dead) return;
         const { dmg, isCrit, dmgType } = this._calculateAttackDamage(target, game);
         target.takeDamage(dmg, this, game);
+
+        // 攻击暴露残留：打英雄/小兵/塔时暴露1秒，打野不暴露
+        if (!(target instanceof Monster)) this.visionResidue = 1.0;
 
         // 吸血 — 对塔不吸血，对野怪×1.5
         if (!(target instanceof Tower) && this.physVamp > 0) {
@@ -1889,19 +1895,44 @@ class Game {
         return false;
     }
 
+    // 获取草丛ID（同一草丛内敌我互见用）
+    getBushId(x, y) {
+        for (let i = 0; i < this.bushes.length; i++) {
+            const b = this.bushes[i];
+            if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) return i;
+        }
+        return -1;
+    }
+
+    // 检查坐标是否在防御塔真实视野内
+    isInTowerVision(x, y, observerTeam) {
+        for (const t of this.towers) {
+            if (t.dead || t.team !== observerTeam) continue;
+            const range = t.tier === 'crystal' ? 1200 : (t.tier === 'inner' ? 900 : 800);
+            if (dist({ x, y }, t) < range) return true;
+        }
+        return false;
+    }
+
     canSee(viewer, target) {
         if (!(target instanceof Hero)) return true;
+        // 塔真实视野：穿透草丛
+        if (this.isInTowerVision(target.x, target.y, viewer.team)) return true;
+        // 攻击残留：暴露中
+        if (target.visionResidue > 0) return true;
+        // 同草丛互见
+        const viewerInBush = this.isInBush(viewer.x, viewer.y);
         const targetInBush = this.isInBush(target.x, target.y);
+        if (viewerInBush && targetInBush && this.getBushId(viewer.x, viewer.y) === this.getBushId(target.x, target.y)) return true;
+        // 目标不在草丛：正常可见
         if (!targetInBush) return true;
         // 草丛内移动：300 码可见（草丛晃动效果）
         if (target.moveTarget && target.stillTimer < 1) {
-            const viewerInBush = this.isInBush(viewer.x, viewer.y);
             if (viewerInBush && dist(viewer, target) < 350) return true;
             if (dist(viewer, target) < 300) return true;
             return false;
         }
         // 静止 1 秒+：完全隐身，180 码才可见
-        const viewerInBush = this.isInBush(viewer.x, viewer.y);
         if (viewerInBush && dist(viewer, target) < 250) return true;
         if (dist(viewer, target) < 180) return true;
         return false;
